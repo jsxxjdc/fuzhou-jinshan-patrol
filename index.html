@@ -203,7 +203,75 @@
   .perm-body .field select,.perm-body .field input{width:100%;padding:10px 14px;border:1.5px solid var(--g200);border-radius:var(--r-sm);font-size:14px;font-family:inherit}
   .perm-body .field select:focus,.perm-body .field input:focus{outline:none;border-color:var(--pri)}
 
-  @media(max-width:768px){.bar{flex-direction:column}.cgrid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}.stats{grid-template-columns:repeat(2,1fr)}.topnav{flex-direction:column;height:auto;padding:12px 16px;gap:8px}.pg{padding:12px 14px 32px}}
+  .sec,.cbox{overflow-x:auto}
+  @media(max-width:900px){
+    .topnav{padding:10px 16px;height:auto;gap:6px}
+    .brand .logo{width:36px;height:36px;font-size:15px;border-radius:10px}
+    .brand .txt h1{font-size:13px}
+    .nav-tab{padding:7px 14px;font-size:12px}
+    .pg{padding:12px 12px 36px}
+    .card{padding:14px 14px}
+    .bar{gap:10px}
+    .charts{grid-template-columns:1fr}
+    .be-head{flex-direction:column;align-items:flex-start}
+    .filters{width:100%}
+    .modal{max-width:94vw;max-height:88vh;overflow-y:auto}
+    .perm-box{max-width:94vw;max-height:88vh;overflow-y:auto}
+    .pw-box{max-width:92vw}
+  }
+  @media(max-width:640px){
+    .topnav{flex-direction:row;flex-wrap:wrap}
+    .bar .field{width:100%}
+    .field input,.field select{width:100%;min-width:0;font-size:16px}
+    .prog{width:100%;margin-left:0}
+    .prog .track{flex:1}
+    .cgrid{grid-template-columns:repeat(3,1fr);gap:8px}
+    .ccard{padding:10px 8px}
+    .ccard .cnum{font-size:10px;margin-bottom:4px}
+    .ccard .tname{font-size:13px;padding:4px 6px;line-height:1.35;display:block;text-align:center}
+    .ccard .tbadge{top:4px;right:4px;font-size:9px;padding:1px 5px}
+    .gtabs{gap:5px;margin-bottom:10px}
+    .gtab{padding:7px 10px;font-size:12px;flex:1 1 auto;min-width:calc(33.3% - 8px);text-align:center}
+    .stats{grid-template-columns:repeat(2,1fr);gap:8px}
+    .scard{padding:12px 6px}
+    .scard .num{font-size:24px}
+    .submit-box h3{font-size:13px}
+    .submit-btn{width:100%}
+    .btn{padding:10px 14px}
+    .btn-pri{width:100%}
+    .submit-row{flex-direction:column;align-items:stretch;gap:8px}
+    .hint{text-align:center}
+    .brow .bl{width:56px;font-size:11px}
+    .brow .bt{height:20px}
+    .opt-btn{padding:12px 10px}
+    .opt-btn .ico{width:34px;height:34px;font-size:16px}
+    .modal-head{padding:16px 16px 0}
+     .modal-body{padding:12px 16px 16px}
+     .modal-sub{font-size:12px}
+     .sub-actions .btn{width:auto;flex:1}
+     .sub-input textarea,.sub-input input{font-size:16px}
+    .issues li{font-size:12px}
+    .sec h3{font-size:14px}
+    table.dt{font-size:12px}
+    table.dt th{padding:8px 6px;font-size:11px}
+    table.dt td{padding:8px 6px}
+    .be-head .filters select,.be-head .filters input{font-size:14px;min-width:0}
+    .filters{display:flex;flex-wrap:wrap}
+    .filters select,.filters input{flex:1 1 45%}
+    .prog .lbl{font-size:12px}
+    .stat-cards{grid-template-columns:repeat(2,1fr)}
+  }
+  @media(max-width:420px){
+    .cgrid{grid-template-columns:repeat(3,1fr)}
+    .ccard .tname{font-size:12px}
+    .gtab{padding:6px 4px;font-size:11px;min-width:calc(50% - 6px)}
+    .brand .txt .sub{display:none}
+    .modal .btn{font-size:13px}
+  }
+  @supports(padding:max(0px)){
+    .topnav,.submit-box,.be-head{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+    .pg{padding-bottom:max(32px,env(safe-area-inset-bottom))}
+  }
 </style>
 </head>
 <body>
