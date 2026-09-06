@@ -557,7 +557,13 @@ function doSubmit(){
   $('inp-fb').classList.remove('er');
 
   const d=getDate(),sub={date:d,weekday:getWday(),inspector:insp,feedback:fb,ts:new Date().toISOString(),records:[]};
-  for(const[k,r]of Object.entries(S.rec)){if(r.date===d)sub.records.push(r);}
+  // 提交时将本次所有评价记录回填为实际检查人员（防止先评价后填名字导致漏填）
+  for(const[k,r]of Object.entries(S.rec)){
+    if(r.date===d){
+      r.inspector=insp;
+      sub.records.push(r);
+    }
+  }
 
   let subs=[];try{subs=JSON.parse(localStorage.getItem('pss')||'[]');}catch(e){}
   subs.push(sub);localStorage.setItem('pss',JSON.stringify(subs));
@@ -694,6 +700,12 @@ async function pullFromCloud(){
     const map=new Map();
     for(const s of allSubs){if(s&&s.ts&&!map.has(s.ts))map.set(s.ts,s);}
     const merged=Array.from(map.values()).sort((a,b)=>(a.ts>b.ts?1:-1));
+    // 规范化：历史记录中检查人漏填(空/未填写)时按该次提交的检查人回填
+    for(const s of merged){
+      if(s&&Array.isArray(s.records)){
+        for(const r of s.records){if(r&&(!r.inspector||r.inspector==='未填写')&&s.inspector)r.inspector=s.inspector;}
+      }
+    }
     localStorage.setItem('pss',JSON.stringify(merged));
     if(latestPerm){Object.assign(SCHEDULE,latestPerm.data||{});try{localStorage.setItem('perm_schedule',JSON.stringify(latestPerm.data||{}));}catch(e){}}
     if($('pg-backend')&&$('pg-backend').classList.contains('on'))renderBE();
@@ -708,8 +720,13 @@ async function pushToCloud(){
   try{
     const db=await cdb();
     const subs=JSON.parse(localStorage.getItem('pss')||'[]');
-    // 本机归属的记录：uid 等于本机 uid 或尚未标记 uid（本地新提交归本机）
+    // 本机归属的记录：uid 等于本机 uid 或尚未标记 uid（本地新提交归本机），并回填漏填的检查人
     const mine=subs.filter(s=>!s.uid||s.uid===cAuthUid).map(s=>({...s,uid:cAuthUid}));
+    for(const s of mine){
+      if(s&&Array.isArray(s.records)){
+        for(const r of s.records){if(r&&(!r.inspector||r.inspector==='未填写')&&s.inspector)r.inspector=s.inspector;}
+      }
+    }
     const psStr=localStorage.getItem('perm_schedule');
     let permObj=null;
     if(psStr){const data=JSON.parse(psStr);permObj={data:data,updatedAt:new Date().toISOString()};}
