@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-<script src="https://static.cloudbase.net/cloudbase-js-sdk/1.7.2/cloudbase.full.js"></script>
+<script src="https://static.cloudbase.net/cloudbase-js-sdk/2.15.0/cloudbase.full.js"></script>
 <style>
   :root {
     --pri: #4f46e5; --pri-l: #818cf8; --pri-d: #3730a3; --pri-bg: #eef2ff;
@@ -552,20 +552,40 @@ try{const ps=JSON.parse(localStorage.getItem('perm_schedule'));if(ps){Object.ass
 // CLOUD SYNC (腾讯云 CloudBase 免配置)
 // ============================================================
 const ENV_ID='cloud1-1gwx7o15f754ab18';
+const ENV_REGION='ap-shanghai';
+// Publishable Key 为公开的客户端密钥（仅授权匿名访问公开资源），设计上可安全用于浏览器
+const PUB_KEY='eyJhbGciOiJSUzI1NiIsImtpZCI6IjlkMWRjMzFlLWI0ZDAtNDQ4Yi1hNzZmLWIwY2M2M2Q4MTQ5OCJ9.eyJpc3MiOiJodHRwczovL2Nsb3VkMS0xZ3d4N28xNWY3NTRhYjE4LmFwLXNoYW5naGFpLnRjYi1hcGkudGVuY2VudGNsb3VkYXBpLmNvbSIsInN1YiI6ImFub24iLCJhdWQiOiJjbG91ZDEtMWd3eDdvMTVmNzU0YWIxOCIsImV4cCI6NDA5MjM3ODY4OSwiaWF0IjoxNzg4Njk1NDg5LCJub25jZSI6InpabTBvZ0JPU1YtNTFEMkdQaVoxSUEiLCJhdF9oYXNoIjoielptMG9nQk9TVi01MUQyR1BpWjFJQSIsIm5hbWUiOiJBbm9ueW1vdXMiLCJzY29wZSI6ImFub255bW91cyIsInByb2plY3RfaWQiOiJjbG91ZDEtMWd3eDdvMTVmNzU0YWIxOCIsIm1ldGEiOnsicGxhdGZvcm0iOiJQdWJsaXNoYWJsZUtleSJ9LCJ1c2VyX3R5cGUiOiIiLCJjbGllbnRfdHlwZSI6ImNsaWVudF91c2VyIiwiaXNfc3lzdGVtX2FkbWluIjpmYWxzZX0.XWsGrr6FQxGxF3bhqSUdpvmeIHe5rxFissXHBVkw6l3q-yQ8fxv0NT7knYBBhgU-VuOvjnrKVuE9mbUmFt3Roxx-0DFQDsOlrjo0L_-CXmIktNvQcnfg-Qd1dRnxSJ0dUmmwIQ6fi5p30dXNR_70GavGCqOIBxbnot3-ZeJjFNxz6mP2GRI0sdiTqiTvGjNnVmJx7S9ZtYBAajFTRVkCeLFBpjDaRwrQtClEYEFtMTtwxz1WrVIIDnX_FMvT0gys7-WOmQAd8Ol66gAxdwqo9MFyKDeE-H1-fjjkYgIj_6IkJIBTdesN8RCwMLQjQ1o8L90biljKeFe-n7t9K1ZwHg';
 const COLL='patrol_data';
 let cApp=null, cloudConnected=false, cAuthUid=null, authReady=null;
+
+function shortUid(){
+  return String(cAuthUid||'').replace(/[^0-9a-zA-Z]/g,'').slice(0,24);
+}
 
 async function ensureCloud(){
   if(authReady)return authReady;
   authReady=(async()=>{
     if(typeof cloudbase==='undefined')throw new Error('cloudbase sdk 未加载');
-    if(!cApp)cApp=cloudbase.init({env:ENV_ID});
+    if(!cApp)cApp=cloudbase.init({env:ENV_ID,region:ENV_REGION,accessKey:PUB_KEY});
     const auth=cApp.auth({persistence:'local'});
-    const state=await auth.anonymousAuthProvider().signIn();
-    const user=state&&state.user?state.user:(auth.currentUser||null);
+    let user=null;
+    try{
+      const r=await auth.signInAnonymously();
+      user=(r&&(r.user||(r.data&&(r.data.user||(r.data.session&&r.data.session.user)))))||null;
+    }catch(e1){
+      try{
+        const st=await auth.anonymousAuthProvider().signIn();
+        user=(st&&(st.user||auth.currentUser))||null;
+      }catch(e2){
+        try{const s=await auth.getSession();user=(s&&s.data&&s.data.session&&s.data.session.user)||null;}catch(e3){}
+      }
+    }
+    if(!user){
+      try{const s=await auth.getSession();user=(s&&s.data&&s.data.session&&s.data.session.user)||null;}catch(e4){}
+    }
     if(!user)throw new Error('匿名登录失败');
-    cAuthUid=user.uid;
-    cloudConnected=true;
+    cAuthUid=user.id||user.uid||user._id||'';
+    cloudConnected=!!cAuthUid;
     console.log('CloudBase 已连接 uid='+cAuthUid);
     return cApp;
   })().catch(e=>{console.error('CloudBase 连接失败:',e);cloudConnected=false;authReady=null;throw e;});
@@ -605,7 +625,7 @@ async function pullFromCloud(){
   }catch(e){console.error('云端拉取失败:',e);return null;}
 }
 
-// 将本机提交上传到云端（每人一个文档，文档ID=匿名用户uid）
+// 将本机提交上传到云端（每人一个文档，文档ID由匿名用户uid派生）
 async function pushToCloud(){
   try{
     const db=await cdb();
@@ -617,7 +637,8 @@ async function pushToCloud(){
     if(psStr){const data=JSON.parse(psStr);permObj={data:data,updatedAt:new Date().toISOString()};}
     const payload={submissions:mine,updatedAt:new Date().toISOString()};
     if(permObj)payload.perm_schedule=permObj;
-    await db.collection(COLL).doc(cAuthUid).set(payload);
+    const did=shortUid();
+    await db.collection(COLL).doc(did).set(payload);
     // 更新本地记录的 uid 归属，避免重复上传
     const merged=subs.map(s=>(s.uid? s : {...s,uid:cAuthUid}));
     localStorage.setItem('pss',JSON.stringify(merged));
