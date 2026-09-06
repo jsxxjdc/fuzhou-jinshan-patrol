@@ -73,14 +73,13 @@
   .ccard::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--g200);transition:var(--tr)}
   .ccard:hover{box-shadow:var(--sh-md);transform:translateY(-2px);border-color:var(--g300)}
   .ccard:hover::before{background:var(--pri-l)}
-  .ccard.praised{border-color:var(--ok);background:var(--ok-bg)}.ccard.praised::before{background:var(--ok)}
-  .ccard.attention{border-color:var(--warn);background:var(--warn-bg)}.ccard.attention::before{background:var(--warn)}
-  .ccard.othertag{border-color:var(--cyan);background:var(--cyan-l)}.ccard.othertag::before{background:var(--cyan)}
+  .ccard.pending{border-color:#fde68a;background:#fffbeb}.ccard.pending::before{background:var(--warn)}
+  .ccard.done{border-color:var(--g100);background:#fff}
   .ccard .cnum{font-size:11px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
   .ccard .tname{font-size:15px;font-weight:700;color:var(--g800);cursor:pointer;padding:6px 10px;border-radius:var(--r-sm);transition:var(--tr);display:inline-block;max-width:100%;word-break:break-all;line-height:1.4}
   .ccard .tname:hover{background:var(--pri-bg);color:var(--pri)}
   .ccard .tbadge{position:absolute;top:10px;right:10px;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700;letter-spacing:.3px}
-  .tbadge.p{background:var(--ok);color:#fff}.tbadge.n{background:var(--warn);color:#fff}.tbadge.o{background:var(--cyan);color:#fff}
+  .tbadge.pending{background:var(--g300);color:#fff}.tbadge.done{background:var(--ok);color:#fff}
 
   /* ===== SUBMIT ===== */
   .submit-box{margin-top:18px;padding:20px 24px}
@@ -309,8 +308,10 @@
   <div class="gtabs" id="gtabs"></div>
   <div class="cgrid" id="cgrid"></div>
   <div class="card submit-box">
-    <h3><span class="dot"></span>巡课反馈 <span style="color:var(--err);font-weight:400;font-size:12px">（必填）</span></h3>
-    <textarea id="inp-fb" placeholder="请填写巡课过程中发现的问题或建议..."></textarea>
+    <h3><span class="dot"></span>巡课反馈 <span style="color:var(--err);font-weight:400;font-size:12px">（3条均为必填）</span></h3>
+    <textarea id="inp-fb1" placeholder="反馈1：请填写巡课中发现的问题或建议..."></textarea>
+    <textarea id="inp-fb2" placeholder="反馈2：请填写巡课中发现的问题或建议..." style="margin-top:8px"></textarea>
+    <textarea id="inp-fb3" placeholder="反馈3：请填写巡课中发现的问题或建议..." style="margin-top:8px"></textarea>
     <div class="submit-row">
       <button class="btn btn-pri" onclick="doSubmit()">提交巡课记录</button>
       <span class="hint" id="submit-hint"></span>
@@ -358,6 +359,7 @@
         <button class="opt-btn" onclick="pickAction('need-attention')"><div class="ico ico-n">⚠️</div><div><div class="lbl">需要关注</div><div class="desc">存在一定问题，需关注改进</div></div></button>
         <button class="opt-btn" onclick="toggleBox('other')"><div class="ico ico-o">📝</div><div><div class="lbl">其他</div><div class="desc">自定义备注</div></div></button>
         <button class="opt-btn" onclick="toggleBox('rename')"><div class="ico ico-r">✏️</div><div><div class="lbl">修改教师名字</div><div class="desc">仅本次巡课生效，不影响总表</div></div></button>
+        <button class="opt-btn" id="undo-btn" style="display:none" onclick="undoAction()"><div class="ico" style="background:var(--err-bg);color:var(--err)">↩️</div><div><div class="lbl">撤销本次评价</div><div class="desc">点错了？撤销后该班恢复为待反馈</div></div></button>
       </div>
       <div class="sub-input" id="box-other">
         <textarea id="inp-other" placeholder="请输入备注内容..."></textarea>
@@ -483,10 +485,9 @@ function renderGrid(){
   g.innerHTML=cls.map(c=>{
     const k=`${d}_${S.grade}_${c}`,r=S.rec[k];
     const tn=r?.display||gd[c];
-    let cls2='ccard',badge='';
-    if(r?.action==='praise'){cls2+=' praised';badge='<span class="tbadge p">表扬</span>';}
-    else if(r?.action==='need-attention'){cls2+=' attention';badge='<span class="tbadge n">关注</span>';}
-    else if(r?.action==='other'){cls2+=' othertag';badge='<span class="tbadge o">其他</span>';}
+    const done=!!r?.action;
+    const cls2=done?'ccard done':'ccard pending';
+    const badge=done?'<span class="tbadge done">已反馈</span>':'<span class="tbadge pending">待反馈</span>';
     return `<div class="${cls2}">${badge}<div class="cnum">${c}</div><div class="tname" onclick="openModal('${S.grade}','${esc(c)}','${esc(gd[c])}')">${esc(tn)}</div></div>`;
   }).join('');
 }
@@ -504,11 +505,16 @@ function updateProg(){
 }
 
 // MODAL
+const ACTION_LABEL={praise:'👍 表扬',['need-attention']:'⚠️ 需要关注',other:'📝 其他'};
 function openModal(g,c,orig){
   S.modal={grade:g,cls:c,orig};
   const d=getDate(),k=`${d}_${g}_${c}`,r=S.rec[k];
   $('m-title').textContent=`${c} · ${g}`;
-  $('m-sub').innerHTML=`当前教师：<b>${esc(r?.display||orig)}</b>`;
+  const cur=r?.action?`当前已标记：<b style="color:var(--ok)">${ACTION_LABEL[r.action]||r.action}</b> · `:'';
+  $('m-sub').innerHTML=`${cur}当前教师：<b>${esc(r?.display||orig)}</b>`;
+  // 已评价时显示“撤销”入口
+  const undoBtn=$('undo-btn');
+  undoBtn.style.display=r?.action?'flex':'none';
   $('inp-rename').value=r?.display||orig;
   $('inp-other').value='';
   ['rename','other'].forEach(x=>toggleBox(x,false));
@@ -545,6 +551,14 @@ function pickAction(action){
   saveS();closeModal();renderGrid();updateProg();
 }
 
+function undoAction(){
+  if(!S.modal)return;
+  const d=getDate(),k=`${d}_${S.modal.grade}_${S.modal.cls}`;
+  if(!S.rec[k]?.action)return;
+  delete S.rec[k];
+  saveS();closeModal();renderGrid();updateProg();
+}
+
 // SUBMIT
 function doSubmit(){
   // Check inspector name
@@ -552,9 +566,17 @@ function doSubmit(){
   if(!insp){$('inp-inspector').classList.add('error');$('submit-hint').textContent='请填写检查人员姓名（必填）';$('submit-hint').style.color='var(--err)';return;}
   $('inp-inspector').classList.remove('error');
 
-  const fb=$('inp-fb').value.trim();
-  if(!fb){$('inp-fb').classList.add('er');$('submit-hint').textContent='请填写巡课反馈问题（必填）';$('submit-hint').style.color='var(--err)';return;}
-  $('inp-fb').classList.remove('er');
+  // 三条反馈均为必填
+  const fbArr=[1,2,3].map(i=>$('inp-fb'+i).value.trim());
+  const emptyIdx=fbArr.findIndex(v=>!v);
+  if(emptyIdx>-1){
+    $('inp-fb'+(emptyIdx+1)).classList.add('er');
+    $('submit-hint').textContent=`请填写第 ${emptyIdx+1} 条巡课反馈（3条均为必填）`;
+    $('submit-hint').style.color='var(--err)';
+    return;
+  }
+  [1,2,3].forEach(i=>$('inp-fb'+i).classList.remove('er'));
+  const fb=fbArr.map((t,i)=>'反馈'+(i+1)+'：'+t).join('\n');
 
   const d=getDate(),sub={date:d,weekday:getWday(),inspector:insp,feedback:fb,ts:new Date().toISOString(),records:[]};
   // 提交时将本次所有评价记录回填为实际检查人员（防止先评价后填名字导致漏填）
@@ -572,10 +594,14 @@ function doSubmit(){
   // 提交后清除单次修改的名字，恢复总表原名
   for(const[k,r]of Object.entries(S.rec)){if(r.date===d){delete r.display;}}
   saveS();renderGrid();updateProg();
-  $('inp-fb').value='';$('submit-hint').textContent='提交成功！';$('submit-hint').style.color='var(--ok)';
+  [1,2,3].forEach(i=>$('inp-fb'+i).value='');
+  $('submit-hint').textContent='提交成功！';$('submit-hint').style.color='var(--ok)';
   setTimeout(()=>$('submit-hint').textContent='',3000);
 }
-document.addEventListener('DOMContentLoaded',()=>{$('inp-fb').addEventListener('focus',()=>$('inp-fb').classList.remove('er'));$('inp-inspector').addEventListener('focus',()=>$('inp-inspector').classList.remove('error'));});
+document.addEventListener('DOMContentLoaded',()=>{
+  [1,2,3].forEach(i=>$('inp-fb'+i).addEventListener('focus',()=>$('inp-fb'+i).classList.remove('er')));
+  $('inp-inspector').addEventListener('focus',()=>$('inp-inspector').classList.remove('error'));
+});
 
 // PAGE SWITCH
 function switchPage(p){
