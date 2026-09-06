@@ -297,7 +297,7 @@
 <!-- ===== 巡课端 ===== -->
 <div id="pg-patrol" class="pg on">
   <div class="card bar">
-    <div class="field"><label>日期</label><input type="date" id="inp-date" onchange="onDateChange()"></div>
+    <div class="field"><label>日期（自动）</label><input type="date" id="inp-date" disabled></div>
     <div class="field"><label>星期</label>
       <select id="inp-wday" onchange="onWdayChange()">
         <option value="0">星期一</option><option value="1">星期二</option><option value="2">星期三</option><option value="3">星期四</option><option value="4">星期五</option>
@@ -466,7 +466,13 @@ function getWday(){return WDAYS[S.wdIdx]}
 function init(){
   loadS();
   const now=new Date();
-  $('inp-date').value=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
+  const today=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
+  $('inp-date').value=today;
+  // 跨天自动更新：新的一天清空本地巡课状态（昨天的记录不再显示、不进入今天的提交）
+  let lastDate='';
+  try{lastDate=localStorage.getItem('cb_lastdate')||'';}catch(e){}
+  if(lastDate!==today){S.rec={};S.inspector='';saveS();}
+  try{localStorage.setItem('cb_lastdate',today);}catch(e){}
   let di=now.getDay()-1;if(di<0||di>4)di=0;
   S.wdIdx=di;$('inp-wday').value=di;
   if(S.inspector)$('inp-inspector').value=S.inspector;
@@ -474,11 +480,7 @@ function init(){
   // 腾讯云免配置：自动连接并拉取云端（已在脚本末尾触发）
 }
 
-function onDateChange(){
-  const d=new Date($('inp-date').value);if(isNaN(d))return;
-  let di=d.getDay()-1;if(di<0||di>4)di=0;
-  S.wdIdx=di;$('inp-wday').value=di;renderGrid();updateProg();
-}
+function onDateChange(){} // 日期自动固定，不允许手动选择
 function onWdayChange(){S.wdIdx=+$('inp-wday').value;renderGrid();updateProg();}
 
 // GRADE TABS
@@ -595,6 +597,11 @@ function doSubmit(){
   }
 
   let subs=[];try{subs=JSON.parse(localStorage.getItem('pss')||'[]');}catch(e){}
+  // 同一检查人员在同一天再次提交 → 覆盖之前的提交（仅保留最新一份）
+  let hadOld=false;
+  const preLen=subs.length;
+  subs=subs.filter(x=>!(x.date===d&&x.inspector===insp));
+  hadOld=subs.length<preLen;
   subs.push(sub);localStorage.setItem('pss',JSON.stringify(subs));
   // 同步到云端
   pushToCloud();
@@ -603,7 +610,7 @@ function doSubmit(){
   saveS();renderGrid();updateProg();
   [1,2,3].forEach(i=>$('inp-fb'+i).value='');
   $('submit-hint').textContent='';$('submit-hint').style.color='var(--ok)';
-  showToast('✅ 提交成功！数据已同步云端');
+  showToast(hadOld?'✅ 已更新提交（覆盖原记录）！':'✅ 提交成功！数据已同步云端');
 }
 let toastTimer=null;
 function showToast(msg){
@@ -748,6 +755,10 @@ async function pullFromCloud(){
     let merged=Array.from(map.values()).sort((a,b)=>(a.ts>b.ts?1:-1));
     // 过滤已删除 / 清空标记之前的记录
     merged=merged.filter(s=>!deletedSet.has(s.ts)&&!(clearedAt&&s.ts&&s.ts<clearedAt));
+    // 同一检查人同一天的多次提交只保留最新一条（覆盖提交场景）
+    const byKey=new Map();
+    for(const s of merged){const key=(s.date||'')+'|'+(s.inspector||'');const old=byKey.get(key);if(!old||(s.ts||'')>(old.ts||''))byKey.set(key,s);}
+    merged=Array.from(byKey.values()).sort((a,b)=>(a.ts>b.ts?1:-1));
     // 规范化：历史记录中检查人漏填(空/未填写)时按该次提交的检查人回填
     for(const s of merged){
       if(s&&Array.isArray(s.records)){
@@ -756,6 +767,8 @@ async function pullFromCloud(){
     }
     localStorage.setItem('pss',JSON.stringify(merged));
     if(latestPerm){Object.assign(SCHEDULE,latestPerm.data||{});try{localStorage.setItem('perm_schedule',JSON.stringify(latestPerm.data||{}));}catch(e){}}
+    // 恢复本人在今天已提交的评价到巡课端（仅本设备/本人数据，看不到别人的）
+    restoreToday();
     if($('pg-backend')&&$('pg-backend').classList.contains('on'))renderBE();
     renderGrid();updateProg();
     console.log('云端拉取成功，共 '+merged.length+' 条提交');
@@ -794,6 +807,27 @@ async function pushToCloud(){
 }
 
 // ===== 删除 / 清空数据（删除标记经云端同步到各设备）=====
+// 恢复本人在今天已提交的评价到巡课端（仅本设备归属数据，其他老师提交的内容不可见）
+function restoreToday(){
+  if(!cAuthUid)return;
+  const d=getDate();if(!d)return;
+  let subs=[];try{subs=JSON.parse(localStorage.getItem('pss')||'[]');}catch(e){}
+  const mine=subs.filter(s=>s.date===d&&s.uid===cAuthUid&&Array.isArray(s.records)).sort((a,b)=>((a.ts||'')>(b.ts||'')?-1:1))[0];
+  if(!mine)return;
+  let changed=false;
+  for(const r of mine.records){
+    if(r&&r.grade&&r.cls){
+      const k=`${d}_${r.grade}_${r.cls}`;
+      if(!S.rec[k]){S.rec[k]=r;changed=true;}
+    }
+  }
+  if(!S.inspector&&mine.inspector){
+    S.inspector=mine.inspector;
+    const el=$('inp-inspector');if(el)el.value=mine.inspector;
+    changed=true;
+  }
+  if(changed)saveS();
+}
 function getFlags(){
   try{const f=JSON.parse(localStorage.getItem('cb_flags')||'{"deleted":[],"clearedAt":""}');if(!Array.isArray(f.deleted))f.deleted=[];return f;}catch(e){return{deleted:[],clearedAt:''};}
 }
@@ -996,10 +1030,13 @@ function rByDay(subs,all){
   else{
     h+=`<table class="dt"><thead><tr><th>提交时间</th><th>日期</th><th>星期</th><th>检查人员</th><th>班数</th><th>表扬</th><th>关注</th><th>其他</th><th>反馈</th><th>操作</th></tr></thead><tbody>`;
     for(const s of list){
-      const p=s.records.filter(r=>r.action==='praise').length;
-      const n=s.records.filter(r=>r.action==='need-attention').length;
-      const o=s.records.filter(r=>r.action==='other').length;
-      h+=`<tr><td><strong>${fmtTime(s.ts)}</strong></td><td>${s.date}</td><td>${s.weekday}</td><td>${s.inspector}</td><td>${s.records.length}</td><td><span class="bdg g">${p}</span></td><td><span class="bdg y">${n}</span></td><td><span class="bdg b">${o}</span></td><td style="max-width:180px;word-break:break-all;font-size:12px">${(s.feedback||'-').split('\n').join('<br>')}</td><td><a href="javascript:void(0)" style="color:var(--err);font-weight:700" onclick="delSubmission('${String(s.ts||'').replace(/'/g,"\\'")}')">删除</a></td></tr>`;
+      const pR=s.records.filter(r=>r.action==='praise');
+      const nR=s.records.filter(r=>r.action==='need-attention');
+      const oR=s.records.filter(r=>r.action==='other');
+      const pT=pR.length?' title="'+esc('表扬：'+pR.map(r=>`${r.grade} ${r.cls} ${r.display||r.orig}`).join('、'))+'"':'';
+      const nT=nR.length?' title="'+esc('需关注：'+nR.map(r=>`${r.grade} ${r.cls} ${r.display||r.orig}`).join('、'))+'"':'';
+      const oT=oR.length?' title="'+esc('其他：'+oR.map(r=>`${r.grade} ${r.cls} ${r.display||r.orig}`).join('、'))+'"':'';
+      h+=`<tr><td><strong>${fmtTime(s.ts)}</strong></td><td>${s.date}</td><td>${s.weekday}</td><td>${s.inspector}</td><td>${s.records.length}</td><td><span class="bdg g"${pT}>${pR.length}</span></td><td><span class="bdg y"${nT}>${nR.length}</span></td><td><span class="bdg b"${oT}>${oR.length}</span></td><td style="max-width:180px;word-break:break-all;font-size:12px">${(s.feedback||'-').split('\n').join('<br>')}</td><td><a href="javascript:void(0)" style="color:var(--err);font-weight:700" onclick="delSubmission('${String(s.ts||'').replace(/'/g,"\\'")}')">删除</a></td></tr>`;
     }
     h+=`</tbody></table>`;
   }
