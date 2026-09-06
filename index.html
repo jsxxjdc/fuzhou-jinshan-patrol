@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <style>
   :root {
     --pri: #4f46e5; --pri-l: #818cf8; --pri-d: #3730a3; --pri-bg: #eef2ff;
@@ -257,6 +259,7 @@
       <select id="st-view" onchange="renderBE()"><option value="overview">总览</option><option value="by-class">按班级</option><option value="by-day">按日期</option><option value="by-week">按周</option><option value="by-teacher">教师表扬排行</option><option value="issues">问题汇总</option></select>
       <select id="st-grade" onchange="renderBE()"><option value="all">全部年级</option><option value="一年级">一年级</option><option value="二年级">二年级</option><option value="三年级">三年级</option><option value="四年级">四年级</option><option value="五年级">五年级</option><option value="六年级">六年级</option></select>
       <input type="date" id="st-ds" onchange="renderBE()"><span style="color:var(--g400)">至</span><input type="date" id="st-de" onchange="renderBE()">
+      <button class="btn btn-ghost" style="font-size:13px" onclick="openCloud()">☁️ 云端同步</button>
       <button class="btn btn-ghost" style="font-size:13px" onclick="openPermEdit()">永久修改教师</button>
       <button class="btn btn-ghost" style="font-size:13px" onclick="exportExcel()">导出Excel</button>
       <button class="btn btn-ghost" style="font-size:13px" onclick="exportData()">导出数据备份</button>
@@ -335,6 +338,36 @@
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn btn-pri" style="flex:1" onclick="doPermEdit()">保存修改</button>
         <button class="btn btn-ghost" style="flex:0" onclick="closePermEdit()">取消</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CLOUD SYNC MODAL ===== -->
+<div class="overlay" id="ov-cloud">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-head">
+      <h3>云端同步配置</h3>
+      <button class="close" onclick="closeCloud()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="cloud-status-box" style="padding:12px 16px;border-radius:var(--r-sm);margin-bottom:16px;font-size:13px;font-weight:600"></div>
+      <div style="background:var(--g50);border-radius:var(--r);padding:14px;margin-bottom:16px;font-size:12px;color:var(--g600);line-height:1.8">
+        <b>配置步骤：</b><br>
+        1. 打开 <a href="https://console.firebase.google.com/" target="_blank" style="color:var(--pri)">Firebase控制台</a>，创建项目<br>
+        2. 添加Web应用，复制配置信息填入下方<br>
+        3. 进入 <b>Realtime Database</b>，创建数据库<br>
+        4. 数据库规则设置为：<code style="background:var(--g200);padding:2px 6px;border-radius:4px">{ "rules": { ".read": true, ".write": true } }</code><br>
+        <span style="color:var(--err)">注意：公开规则适合内部使用，如需安全请配置认证</span>
+      </div>
+      <div class="field" style="margin-bottom:10px"><label>Firebase 项目ID</label><input type="text" id="cloud-pid" placeholder="my-project-id"></div>
+      <div class="field" style="margin-bottom:10px"><label>API Key</label><input type="text" id="cloud-key" placeholder="AIzaSy..."></div>
+      <div class="field" style="margin-bottom:10px"><label>Database URL</label><input type="text" id="cloud-db" placeholder="https://xxx.firebaseio.com"></div>
+      <div class="field" style="margin-bottom:10px"><label>数据标识（不同学校用不同标识）</label><input type="text" id="cloud-ns" placeholder="jinshan-patrol" value="jinshan-patrol"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-pri" style="flex:1" onclick="saveCloudConfig()">保存并连接</button>
+        <button class="btn btn-ghost" style="flex:0" onclick="disconnectCloud()">断开云端</button>
+        <button class="btn btn-ghost" style="flex:0" onclick="closeCloud()">关闭</button>
       </div>
     </div>
   </div>
@@ -468,6 +501,8 @@ function doSubmit(){
 
   let subs=[];try{subs=JSON.parse(localStorage.getItem('pss')||'[]');}catch(e){}
   subs.push(sub);localStorage.setItem('pss',JSON.stringify(subs));
+  // 同步到云端
+  pushToCloud();
   // 提交后清除单次修改的名字，恢复总表原名
   for(const[k,r]of Object.entries(S.rec)){if(r.date===d){delete r.display;}}
   saveS();renderGrid();updateProg();
@@ -513,12 +548,124 @@ function doPermEdit(){
   SCHEDULE[w][g][c]=nw;
   // Update permanent storage
   try{localStorage.setItem('perm_schedule',JSON.stringify(SCHEDULE));}catch(e){}
+  pushToCloud();
   renderGrid();updateProg();
   alert(`已永久修改：${w} ${g} ${c} → ${nw}`);
   closePermEdit();
 }
 // Load permanent changes
 try{const ps=JSON.parse(localStorage.getItem('perm_schedule'));if(ps){Object.assign(SCHEDULE,ps);}}catch(e){}
+
+// ============================================================
+// CLOUD SYNC (Firebase)
+// ============================================================
+let dbRef=null, cloudNS='jinshan-patrol', cloudConnected=false;
+
+function loadCloudConfig(){
+  try{const c=JSON.parse(localStorage.getItem('cloud_cfg'));if(c&&c.pid&&c.key&&c.db){return c;}}catch(e){}
+  return null;
+}
+
+function initFirebase(){
+  const cfg=loadCloudConfig();
+  if(!cfg)return false;
+  try{
+    if(!firebase.apps.length){firebase.initializeApp({apiKey:cfg.key,authDomain:cfg.pid+'.firebaseapp.com',databaseURL:cfg.db,projectId:cfg.pid});}
+    else{firebase.initializeApp({apiKey:cfg.key,authDomain:cfg.pid+'.firebaseapp.com',databaseURL:cfg.db,projectId:cfg.pid},'_patrol');}
+    dbRef=firebase.database().ref(cfg.ns||'jinshan-patrol');
+    cloudNS=cfg.ns||'jinshan-patrol';
+    cloudConnected=true;
+    // Listen for real-time updates
+    dbRef.child('submissions').on('value',snap=>{
+      const val=snap.val();
+      if(val){
+        const subs=Array.isArray(val)?val.filter(Boolean):Object.values(val);
+        localStorage.setItem('pss',JSON.stringify(subs));
+        if($('pg-backend').classList.contains('on'))renderBE();
+      }
+    });
+    dbRef.child('perm_schedule').on('value',snap=>{
+      const val=snap.val();
+      if(val){Object.assign(SCHEDULE,val);try{localStorage.setItem('perm_schedule',JSON.stringify(val));}catch(e){}}
+    });
+    return true;
+  }catch(e){console.error('Firebase init error:',e);return false;}
+}
+
+async function pushToCloud(){
+  if(!cloudConnected||!dbRef)return;
+  try{
+    const subs=JSON.parse(localStorage.getItem('pss')||'[]');
+    await dbRef.child('submissions').set(subs);
+    const ps=localStorage.getItem('perm_schedule');
+    if(ps)await dbRef.child('perm_schedule').set(JSON.parse(ps));
+  }catch(e){console.error('Cloud push error:',e);}
+}
+
+async function pullFromCloud(){
+  if(!cloudConnected||!dbRef)return;
+  try{
+    const snap=await dbRef.child('submissions').once('value');
+    const val=snap.val();
+    if(val){
+      const subs=Array.isArray(val)?val.filter(Boolean):Object.values(val);
+      localStorage.setItem('pss',JSON.stringify(subs));
+    }
+    const psSnap=await dbRef.child('perm_schedule').once('value');
+    const psVal=psSnap.val();
+    if(psVal){Object.assign(SCHEDULE,psVal);localStorage.setItem('perm_schedule',JSON.stringify(psVal));}
+    renderBE();
+  }catch(e){console.error('Cloud pull error:',e);}
+}
+
+function openCloud(){
+  $('ov-cloud').classList.add('on');
+  const cfg=loadCloudConfig();
+  if(cfg){
+    $('cloud-pid').value=cfg.pid||'';$('cloud-key').value=cfg.key||'';
+    $('cloud-db').value=cfg.db||'';$('cloud-ns').value=cfg.ns||'jinshan-patrol';
+  }
+  updateCloudStatus();
+}
+function closeCloud(){$('ov-cloud').classList.remove('on');}
+
+function updateCloudStatus(){
+  const box=$('cloud-status-box');
+  if(cloudConnected){
+    box.style.background='var(--ok-bg)';box.style.color='var(--ok)';
+    box.innerHTML='✅ 已连接云端 — 数据实时同步中，所有设备共享数据';
+  }else{
+    box.style.background='var(--warn-bg)';box.style.color='var(--warn)';
+    box.innerHTML='⚠️ 未连接云端 — 数据仅存储在当前浏览器，换设备数据会丢失';
+  }
+}
+
+function saveCloudConfig(){
+  const pid=$('cloud-pid').value.trim(),key=$('cloud-key').value.trim();
+  const db=$('cloud-db').value.trim(),ns=$('cloud-ns').value.trim()||'jinshan-patrol';
+  if(!pid||!key||!db){alert('请填写完整的Firebase配置信息');return;}
+  localStorage.setItem('cloud_cfg',JSON.stringify({pid,key,db,ns}));
+  // Reinitialize
+  try{if(firebase.apps.length>0){firebase.apps.forEach(a=>a.delete());}}catch(e){}
+  cloudConnected=false;dbRef=null;
+  if(initFirebase()){
+    alert('云端连接成功！数据将实时同步到所有设备。');
+    closeCloud();pullFromCloud();
+  }else{
+    alert('连接失败，请检查配置信息是否正确。');
+  }
+}
+
+function disconnectCloud(){
+  if(!confirm('断开云端后数据将不再同步，是否继续？'))return;
+  localStorage.removeItem('cloud_cfg');
+  cloudConnected=false;dbRef=null;
+  try{if(firebase.apps.length>0){firebase.apps.forEach(a=>a.delete());}}catch(e){}
+  updateCloudStatus();alert('已断开云端连接');
+}
+
+// Try auto-connect on load
+try{initFirebase();}catch(e){}
 
 // ============================================================
 // BACKEND RENDERING
@@ -778,6 +925,7 @@ function importData(e){
         saveS();
       }
       alert('数据导入成功！');
+      pushToCloud();
       location.reload();
     }catch(err){alert('导入失败：文件格式错误');}
   };
