@@ -336,6 +336,7 @@
       <button class="btn btn-ghost" style="font-size:13px" onclick="exportExcel()">导出Excel</button>
       <button class="btn btn-ghost" style="font-size:13px" onclick="exportData()">导出数据备份</button>
       <button class="btn btn-ghost" style="font-size:13px" onclick="document.getElementById('import-file').click()">导入数据</button>
+      <button class="btn btn-ghost" style="font-size:13px;color:var(--err);border:1px solid var(--err)" onclick="clearAllData()">清空全部数据</button>
       <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
     </div>
   </div>
@@ -729,8 +730,13 @@ async function pullFromCloud(){
     const docs=res.data||[];
     const allSubs=[];
     let latestPerm=null, latestPt=0;
+    // 汇总各设备删除标记与清空标记
+    const deletedSet=new Set();
+    let clearedAt='';
     for(const d of docs){
       if(Array.isArray(d.submissions))allSubs.push(...d.submissions);
+      if(Array.isArray(d.deleted))for(const t of d.deleted)if(t)deletedSet.add(t);
+      if(d.clearedAt&&(!clearedAt||d.clearedAt>clearedAt))clearedAt=d.clearedAt;
       if(d.perm_schedule&&d.perm_schedule.updatedAt){
         const t=new Date(d.perm_schedule.updatedAt).getTime();
         if(t>latestPt){latestPt=t;latestPerm=d.perm_schedule;}
@@ -739,7 +745,9 @@ async function pullFromCloud(){
     // 合并去重（按 ts）
     const map=new Map();
     for(const s of allSubs){if(s&&s.ts&&!map.has(s.ts))map.set(s.ts,s);}
-    const merged=Array.from(map.values()).sort((a,b)=>(a.ts>b.ts?1:-1));
+    let merged=Array.from(map.values()).sort((a,b)=>(a.ts>b.ts?1:-1));
+    // 过滤已删除 / 清空标记之前的记录
+    merged=merged.filter(s=>!deletedSet.has(s.ts)&&!(clearedAt&&s.ts&&s.ts<clearedAt));
     // 规范化：历史记录中检查人漏填(空/未填写)时按该次提交的检查人回填
     for(const s of merged){
       if(s&&Array.isArray(s.records)){
@@ -770,7 +778,9 @@ async function pushToCloud(){
     const psStr=localStorage.getItem('perm_schedule');
     let permObj=null;
     if(psStr){const data=JSON.parse(psStr);permObj={data:data,updatedAt:new Date().toISOString()};}
-    const payload={submissions:mine,updatedAt:new Date().toISOString()};
+    // 携带本机删除/清空标记
+    const flags=getFlags();
+    const payload={submissions:mine,deleted:flags.deleted,clearedAt:flags.clearedAt,updatedAt:new Date().toISOString()};
     if(permObj)payload.perm_schedule=permObj;
     const did=shortUid();
     await db.collection(COLL).doc(did).set(payload);
@@ -781,6 +791,39 @@ async function pushToCloud(){
     // 上传后拉取一次全局数据，保证各端一致
     pullFromCloud();
   }catch(e){console.error('云端上传失败:',e);}
+}
+
+// ===== 删除 / 清空数据（删除标记经云端同步到各设备）=====
+function getFlags(){
+  try{const f=JSON.parse(localStorage.getItem('cb_flags')||'{"deleted":[],"clearedAt":""}');if(!Array.isArray(f.deleted))f.deleted=[];return f;}catch(e){return{deleted:[],clearedAt:''};}
+}
+function saveFlags(f){try{localStorage.setItem('cb_flags',JSON.stringify(f));}catch(e){}}
+
+function delSubmission(ts){
+  if(!ts)return;
+  if(!confirm('确定删除该条巡课提交记录吗？删除后各设备均不可见。'))return;
+  const f=getFlags();
+  if(f.deleted.indexOf(ts)<0)f.deleted.push(ts);
+  saveFlags(f);
+  // 本地立即移除
+  let subs=[];try{subs=JSON.parse(localStorage.getItem('pss')||'[]');}catch(e){}
+  subs=subs.filter(s=>s.ts!==ts);
+  localStorage.setItem('pss',JSON.stringify(subs));
+  pushToCloud();
+  renderBE();renderGrid();updateProg();
+  showToast('🗑️ 该条记录已删除');
+}
+
+function clearAllData(){
+  if(!confirm('确定清空所有巡课提交数据吗？此操作会删除全部提交记录，且不可恢复。'))return;
+  if(!confirm('再次确认：是否清空全部巡课数据？'))return;
+  const f=getFlags();
+  f.clearedAt=new Date().toISOString();
+  saveFlags(f);
+  localStorage.setItem('pss','[]');
+  pushToCloud();
+  renderBE();renderGrid();updateProg();
+  showToast('🗑️ 已清空全部巡课提交数据');
 }
 
 function openCloud(){
@@ -951,12 +994,12 @@ function rByDay(subs,all){
   let h=`<div class="sec"><h3><span class="dot"></span>按日期统计（每次提交）</h3>`;
   if(!list.length)h+='<div class="empty" style="padding:20px">暂无数据</div>';
   else{
-    h+=`<table class="dt"><thead><tr><th>提交时间</th><th>日期</th><th>星期</th><th>检查人员</th><th>班数</th><th>表扬</th><th>关注</th><th>其他</th><th>反馈</th></tr></thead><tbody>`;
+    h+=`<table class="dt"><thead><tr><th>提交时间</th><th>日期</th><th>星期</th><th>检查人员</th><th>班数</th><th>表扬</th><th>关注</th><th>其他</th><th>反馈</th><th>操作</th></tr></thead><tbody>`;
     for(const s of list){
       const p=s.records.filter(r=>r.action==='praise').length;
       const n=s.records.filter(r=>r.action==='need-attention').length;
       const o=s.records.filter(r=>r.action==='other').length;
-      h+=`<tr><td><strong>${fmtTime(s.ts)}</strong></td><td>${s.date}</td><td>${s.weekday}</td><td>${s.inspector}</td><td>${s.records.length}</td><td><span class="bdg g">${p}</span></td><td><span class="bdg y">${n}</span></td><td><span class="bdg b">${o}</span></td><td style="max-width:180px;word-break:break-all;font-size:12px">${s.feedback||'-'}</td></tr>`;
+      h+=`<tr><td><strong>${fmtTime(s.ts)}</strong></td><td>${s.date}</td><td>${s.weekday}</td><td>${s.inspector}</td><td>${s.records.length}</td><td><span class="bdg g">${p}</span></td><td><span class="bdg y">${n}</span></td><td><span class="bdg b">${o}</span></td><td style="max-width:180px;word-break:break-all;font-size:12px">${(s.feedback||'-').split('\n').join('<br>')}</td><td><a href="javascript:void(0)" style="color:var(--err);font-weight:700" onclick="delSubmission('${String(s.ts||'').replace(/'/g,"\\'")}')">删除</a></td></tr>`;
     }
     h+=`</tbody></table>`;
   }
