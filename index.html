@@ -610,6 +610,11 @@ function doSubmit(){
   pushToCloud();
   // 提交后清除单次修改的名字，恢复总表原名（评价与三条反馈保留，便于继续修改）
   for(const[k,r]of Object.entries(S.rec)){if(r.date===d&&r.grade===S.grade){delete r.display;}}
+  // 登记本机已提交班级（用于云端删除后恢复待反馈）
+  const f2=getFlags();
+  const newKeys=sub.records.map(r=>`${d}_${r.grade}_${r.cls}`);
+  f2.submitted=[...new Set([...(f2.submitted||[]),...newKeys])];
+  saveFlags(f2);
   saveS();renderGrid();updateProg();
   $('submit-hint').textContent='';$('submit-hint').style.color='var(--ok)';
   showToast(hadOld?`✅ ${S.grade}已更新提交（覆盖原记录）！`:`✅ ${S.grade}提交成功！数据已同步云端`);
@@ -771,6 +776,8 @@ async function pullFromCloud(){
     if(latestPerm){Object.assign(SCHEDULE,latestPerm.data||{});try{localStorage.setItem('perm_schedule',JSON.stringify(latestPerm.data||{}));}catch(e){}}
     // 恢复本人在今天已提交的评价到巡课端（仅本设备/本人数据，看不到别人的）
     restoreToday();
+    // 云端删除后，巡课端已提交班级恢复为待反馈
+    syncDeletedFromCloud();
     if($('pg-backend')&&$('pg-backend').classList.contains('on'))renderBE();
     renderGrid();updateProg();
     console.log('云端拉取成功，共 '+merged.length+' 条提交');
@@ -835,7 +842,7 @@ function restoreToday(){
   if(changed)saveS();
 }
 function getFlags(){
-  try{const f=JSON.parse(localStorage.getItem('cb_flags')||'{"deleted":[],"clearedAt":""}');if(!Array.isArray(f.deleted))f.deleted=[];return f;}catch(e){return{deleted:[],clearedAt:''};}
+  try{const f=JSON.parse(localStorage.getItem('cb_flags')||'{"deleted":[],"clearedAt":"","submitted":[]}');if(!Array.isArray(f.deleted))f.deleted=[];if(!Array.isArray(f.submitted))f.submitted=[];return f;}catch(e){return{deleted:[],clearedAt:'',submitted:[]};}
 }
 function saveFlags(f){try{localStorage.setItem('cb_flags',JSON.stringify(f));}catch(e){}}
 
@@ -844,14 +851,24 @@ function delSubmission(ts){
   if(!confirm('确定删除该条巡课提交记录吗？删除后各设备均不可见。'))return;
   const f=getFlags();
   if(f.deleted.indexOf(ts)<0)f.deleted.push(ts);
-  saveFlags(f);
-  // 本地立即移除
+  // 同步清理巡课端已反馈状态：被删除记录对应班级恢复为待反馈
   let subs=[];try{subs=JSON.parse(localStorage.getItem('pss')||'[]');}catch(e){}
+  const target=subs.find(s=>s.ts===ts);
+  if(target&&Array.isArray(target.records)){
+    for(const r of target.records){
+      if(r.grade&&r.cls){
+        const k=`${getDate()}_${r.grade}_${r.cls}`;
+        if(S.rec[k]){delete S.rec[k];}
+        f.submitted=(f.submitted||[]).filter(x=>x!==k);
+      }
+    }
+  }
+  saveFlags(f);
   subs=subs.filter(s=>s.ts!==ts);
   localStorage.setItem('pss',JSON.stringify(subs));
   pushToCloud();
   renderBE();renderGrid();updateProg();
-  showToast('🗑️ 该条记录已删除');
+  showToast('🗑️ 该条记录已删除，巡课端对应班级已恢复待反馈');
 }
 
 function clearAllData(){
@@ -859,11 +876,40 @@ function clearAllData(){
   if(!confirm('再次确认：是否清空全部巡课数据？'))return;
   const f=getFlags();
   f.clearedAt=new Date().toISOString();
+  f.submitted=[];
   saveFlags(f);
   localStorage.setItem('pss','[]');
+  // 清空巡课端当天已反馈状态
+  const d=getDate();
+  for(const k of Object.keys(S.rec)){if(k.startsWith(d+'_')){delete S.rec[k];}}
+  saveS();
   pushToCloud();
   renderBE();renderGrid();updateProg();
   showToast('🗑️ 已清空全部巡课提交数据');
+}
+
+// 云端同步删除后，把巡课端中“已提交但云端已删除”的班级恢复为待反馈
+function syncDeletedFromCloud(){
+  if(!cAuthUid)return;
+  const d=getDate();if(!d)return;
+  let subs=[];try{subs=JSON.parse(localStorage.getItem('pss')||'[]');}catch(e){}
+  const kept=new Set();
+  for(const s of subs){
+    if(s.date===d&&s.uid===cAuthUid&&Array.isArray(s.records)){
+      for(const r of s.records){if(r.grade&&r.cls)kept.add(`${d}_${r.grade}_${r.cls}`);}
+    }
+  }
+  const f=getFlags();
+  let arr=f.submitted||[];
+  let changed=false;
+  for(const k of arr.slice()){
+    if(k.startsWith(d+'_')&&!kept.has(k)&&S.rec[k]){
+      delete S.rec[k];changed=true;
+      arr=arr.filter(x=>x!==k);
+    }
+  }
+  f.submitted=arr;saveFlags(f);
+  if(changed){saveS();renderGrid();updateProg();}
 }
 
 function openCloud(){
