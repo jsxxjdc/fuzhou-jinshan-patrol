@@ -207,6 +207,7 @@
   .toast.show{transform:translate(-50%,0);opacity:1}
 
   .sec,.cbox{overflow-x:auto}
+  #inp-date{pointer-events:none;background:var(--g50);color:var(--g600)}
   @media(max-width:900px){
     .topnav{padding:10px 16px;height:auto;gap:6px}
     .brand .logo{width:36px;height:36px;font-size:15px;border-radius:10px}
@@ -468,6 +469,7 @@ function init(){
   const now=new Date();
   const today=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
   $('inp-date').value=today;
+  $('inp-date').disabled=true;try{$('inp-date').readOnly=true;}catch(e){}
   // 跨天自动更新：新的一天清空本地巡课状态（昨天的记录不再显示、不进入今天的提交）
   let lastDate='';
   try{lastDate=localStorage.getItem('cb_lastdate')||'';}catch(e){}
@@ -587,30 +589,30 @@ function doSubmit(){
   [1,2,3].forEach(i=>$('inp-fb'+i).classList.remove('er'));
   const fb=fbArr.map((t,i)=>'反馈'+(i+1)+'：'+t).join('\n');
 
-  const d=getDate(),sub={date:d,weekday:getWday(),inspector:insp,feedback:fb,ts:new Date().toISOString(),records:[]};
-  // 提交时将本次所有评价记录回填为实际检查人员（防止先评价后填名字导致漏填）
+  const d=getDate(),sub={date:d,weekday:getWday(),inspector:insp,feedback:fb,ts:new Date().toISOString(),records:[],grade:S.grade};
+  // 只提交当前年段（年级）的评价，便于“同人同天同年段覆盖、不同年段各自保留”
   for(const[k,r]of Object.entries(S.rec)){
-    if(r.date===d){
+    if(r.date===d&&r.grade===S.grade){
       r.inspector=insp;
       sub.records.push(r);
     }
   }
+  if(!sub.records.length){$('submit-hint').textContent='当前年段还没有评价记录，请先点击班级进行评价';$('submit-hint').style.color='var(--err)';return;}
 
   let subs=[];try{subs=JSON.parse(localStorage.getItem('pss')||'[]');}catch(e){}
-  // 同一检查人员在同一天再次提交 → 覆盖之前的提交（仅保留最新一份）
+  // 同一检查人员同一天同一年段的提交 → 覆盖该年段；不同日/不同年段各自保留
   let hadOld=false;
   const preLen=subs.length;
-  subs=subs.filter(x=>!(x.date===d&&x.inspector===insp));
+  subs=subs.filter(x=>!(x.date===d&&x.inspector===insp&&x.grade===S.grade));
   hadOld=subs.length<preLen;
   subs.push(sub);localStorage.setItem('pss',JSON.stringify(subs));
   // 同步到云端
   pushToCloud();
-  // 提交后清除单次修改的名字，恢复总表原名
-  for(const[k,r]of Object.entries(S.rec)){if(r.date===d){delete r.display;}}
+  // 提交后清除单次修改的名字，恢复总表原名（评价与三条反馈保留，便于继续修改）
+  for(const[k,r]of Object.entries(S.rec)){if(r.date===d&&r.grade===S.grade){delete r.display;}}
   saveS();renderGrid();updateProg();
-  [1,2,3].forEach(i=>$('inp-fb'+i).value='');
   $('submit-hint').textContent='';$('submit-hint').style.color='var(--ok)';
-  showToast(hadOld?'✅ 已更新提交（覆盖原记录）！':'✅ 提交成功！数据已同步云端');
+  showToast(hadOld?`✅ ${S.grade}已更新提交（覆盖原记录）！`:`✅ ${S.grade}提交成功！数据已同步云端`);
 }
 let toastTimer=null;
 function showToast(msg){
@@ -755,9 +757,9 @@ async function pullFromCloud(){
     let merged=Array.from(map.values()).sort((a,b)=>(a.ts>b.ts?1:-1));
     // 过滤已删除 / 清空标记之前的记录
     merged=merged.filter(s=>!deletedSet.has(s.ts)&&!(clearedAt&&s.ts&&s.ts<clearedAt));
-    // 同一检查人同一天的多次提交只保留最新一条（覆盖提交场景）
+    // 同一检查人同一天同一年段只保留最新一条（不同年段各自保留）
     const byKey=new Map();
-    for(const s of merged){const key=(s.date||'')+'|'+(s.inspector||'');const old=byKey.get(key);if(!old||(s.ts||'')>(old.ts||''))byKey.set(key,s);}
+    for(const s of merged){const key=(s.date||'')+'|'+(s.inspector||'')+'|'+(s.grade||'');const old=byKey.get(key);if(!old||(s.ts||'')>(old.ts||''))byKey.set(key,s);}
     merged=Array.from(byKey.values()).sort((a,b)=>(a.ts>b.ts?1:-1));
     // 规范化：历史记录中检查人漏填(空/未填写)时按该次提交的检查人回填
     for(const s of merged){
@@ -812,18 +814,22 @@ function restoreToday(){
   if(!cAuthUid)return;
   const d=getDate();if(!d)return;
   let subs=[];try{subs=JSON.parse(localStorage.getItem('pss')||'[]');}catch(e){}
-  const mine=subs.filter(s=>s.date===d&&s.uid===cAuthUid&&Array.isArray(s.records)).sort((a,b)=>((a.ts||'')>(b.ts||'')?-1:1))[0];
-  if(!mine)return;
+  const mine=subs.filter(s=>s.date===d&&s.uid===cAuthUid&&Array.isArray(s.records));
+  if(!mine.length)return;
   let changed=false;
-  for(const r of mine.records){
-    if(r&&r.grade&&r.cls){
-      const k=`${d}_${r.grade}_${r.cls}`;
-      if(!S.rec[k]){S.rec[k]=r;changed=true;}
+  let inspector='';
+  for(const s of mine){
+    if(!inspector&&s.inspector)inspector=s.inspector;
+    for(const r of s.records){
+      if(r&&r.grade&&r.cls){
+        const k=`${d}_${r.grade}_${r.cls}`;
+        if(!S.rec[k]){S.rec[k]=r;changed=true;}
+      }
     }
   }
-  if(!S.inspector&&mine.inspector){
-    S.inspector=mine.inspector;
-    const el=$('inp-inspector');if(el)el.value=mine.inspector;
+  if(!S.inspector&&inspector){
+    S.inspector=inspector;
+    const el=$('inp-inspector');if(el)el.value=inspector;
     changed=true;
   }
   if(changed)saveS();
@@ -970,9 +976,9 @@ function rOverview(subs,all){
   h+=`<div class="sec"><h3><span class="dot"></span>最近提交记录</h3>`;
   if(!subs.length)h+='<div class="empty" style="padding:20px">暂无提交记录</div>';
   else{
-    h+=`<table class="dt"><thead><tr><th>提交时间</th><th>日期</th><th>星期</th><th>检查人员</th><th>检查班数</th><th>反馈</th></tr></thead><tbody>`;
+    h+=`<table class="dt"><thead><tr><th>提交时间</th><th>日期</th><th>星期</th><th>年级</th><th>检查人员</th><th>检查班数</th><th>反馈</th></tr></thead><tbody>`;
     const recent=subs.slice().sort((a,b)=>(a.ts>b.ts?-1:1)).slice(0,10);
-    for(const s of recent)h+=`<tr><td><strong>${fmtTime(s.ts)}</strong></td><td>${s.date}</td><td>${s.weekday}</td><td>${s.inspector}</td><td>${s.records.length}</td><td style="max-width:300px;word-break:break-all">${s.feedback}</td></tr>`;
+    for(const s of recent)h+=`<tr><td><strong>${fmtTime(s.ts)}</strong></td><td>${s.date}</td><td>${s.weekday}</td><td>${s.grade||''}</td><td>${s.inspector}</td><td>${s.records.length}</td><td style="max-width:300px;word-break:break-all">${s.feedback}</td></tr>`;
     h+=`</tbody></table>`;
   }
   h+=`</div>`;
@@ -1028,7 +1034,7 @@ function rByDay(subs,all){
   let h=`<div class="sec"><h3><span class="dot"></span>按日期统计（每次提交）</h3>`;
   if(!list.length)h+='<div class="empty" style="padding:20px">暂无数据</div>';
   else{
-    h+=`<table class="dt"><thead><tr><th>提交时间</th><th>日期</th><th>星期</th><th>检查人员</th><th>班数</th><th>表扬</th><th>关注</th><th>其他</th><th>反馈</th><th>操作</th></tr></thead><tbody>`;
+    h+=`<table class="dt"><thead><tr><th>提交时间</th><th>日期</th><th>星期</th><th>年级</th><th>检查人员</th><th>班数</th><th>表扬</th><th>关注</th><th>其他</th><th>反馈</th><th>操作</th></tr></thead><tbody>`;
     for(const s of list){
       const pR=s.records.filter(r=>r.action==='praise');
       const nR=s.records.filter(r=>r.action==='need-attention');
@@ -1036,7 +1042,7 @@ function rByDay(subs,all){
       const pT=pR.length?' title="'+esc('表扬：'+pR.map(r=>`${r.grade} ${r.cls} ${r.display||r.orig}`).join('、'))+'"':'';
       const nT=nR.length?' title="'+esc('需关注：'+nR.map(r=>`${r.grade} ${r.cls} ${r.display||r.orig}`).join('、'))+'"':'';
       const oT=oR.length?' title="'+esc('其他：'+oR.map(r=>`${r.grade} ${r.cls} ${r.display||r.orig}`).join('、'))+'"':'';
-      h+=`<tr><td><strong>${fmtTime(s.ts)}</strong></td><td>${s.date}</td><td>${s.weekday}</td><td>${s.inspector}</td><td>${s.records.length}</td><td><span class="bdg g"${pT}>${pR.length}</span></td><td><span class="bdg y"${nT}>${nR.length}</span></td><td><span class="bdg b"${oT}>${oR.length}</span></td><td style="max-width:180px;word-break:break-all;font-size:12px">${(s.feedback||'-').split('\n').join('<br>')}</td><td><a href="javascript:void(0)" style="color:var(--err);font-weight:700" onclick="delSubmission('${String(s.ts||'').replace(/'/g,"\\'")}')">删除</a></td></tr>`;
+      h+=`<tr><td><strong>${fmtTime(s.ts)}</strong></td><td>${s.date}</td><td>${s.weekday}</td><td>${s.grade||''}</td><td>${s.inspector}</td><td>${s.records.length}</td><td><span class="bdg g"${pT}>${pR.length}</span></td><td><span class="bdg y"${nT}>${nR.length}</span></td><td><span class="bdg b"${oT}>${oR.length}</span></td><td style="max-width:180px;word-break:break-all;font-size:12px">${(s.feedback||'-').split('\n').join('<br>')}</td><td><a href="javascript:void(0)" style="color:var(--err);font-weight:700" onclick="delSubmission('${String(s.ts||'').replace(/'/g,"\\'")}')">删除</a></td></tr>`;
     }
     h+=`</tbody></table>`;
   }
