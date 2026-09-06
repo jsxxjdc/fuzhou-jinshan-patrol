@@ -54,6 +54,13 @@
   .field input,.field select{padding:9px 14px;border:1.5px solid var(--g200);border-radius:var(--r-sm);font-size:14px;font-family:inherit;background:#fff;transition:var(--tr);min-width:130px;color:var(--g700)}
   .field input:focus,.field select:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(79,70,229,.1)}
   .field input.error{border-color:var(--err);box-shadow:0 0 0 3px rgba(220,38,38,.1)}
+  .insp-btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:9px 14px;border:1.5px dashed var(--g300);border-radius:var(--r-sm);background:#fff;cursor:pointer;font-size:14px;color:var(--g500);font-family:inherit;transition:var(--tr);min-width:150px}
+  .insp-btn:hover{border-color:var(--pri);color:var(--pri);background:rgba(79,70,229,.04)}
+  .insp-btn.filled{border-style:solid;border-color:var(--pri);color:var(--pri);background:rgba(79,70,229,.06);font-weight:600}
+  .insp-btn .insp-ico{font-size:15px;flex-shrink:0}
+  #ov-insp .modal-body input{width:100%;box-sizing:border-box;padding:11px 14px;border:1.5px solid var(--g200);border-radius:var(--r-sm);font-size:16px;font-family:inherit;color:var(--g700);background:#fff;transition:var(--tr)}
+  #ov-insp .modal-body input:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+  #ov-insp .modal-body input.error{border-color:var(--err);box-shadow:0 0 0 3px rgba(220,38,38,.12)}
 
   /* progress */
   .prog{display:flex;align-items:center;gap:10px;margin-left:auto}
@@ -227,6 +234,7 @@
     .topnav{flex-direction:row;flex-wrap:wrap}
     .bar .field{width:100%}
     .field input,.field select{width:100%;min-width:0;font-size:16px}
+    .insp-btn{width:100%;min-width:0;font-size:16px;padding:12px 14px}
     .prog{width:100%;margin-left:0}
     .prog .track{flex:1}
     .cgrid{grid-template-columns:repeat(3,1fr);gap:8px}
@@ -304,7 +312,7 @@
         <option value="0">星期一</option><option value="1">星期二</option><option value="2">星期三</option><option value="3">星期四</option><option value="4">星期五</option>
       </select>
     </div>
-    <div class="field"><label>检查人员 <span style="color:var(--err)">*</span></label><input type="text" id="inp-inspector" placeholder="必填" oninput="saveInsp()"></div>
+    <div class="field"><label>检查人员 <span style="color:var(--err)">*</span></label><button type="button" class="insp-btn" id="btn-insp" onclick="openInspModal()"><span class="insp-ico">👤</span><span id="insp-txt">点击填写姓名</span></button></div>
     <div class="prog">
       <div class="track"><div class="fill" id="prog-fill" style="width:0%"></div></div>
       <div class="lbl" id="prog-lbl">0 / 0</div>
@@ -373,6 +381,24 @@
           <button class="btn btn-pri" style="font-size:13px;padding:9px 18px" onclick="pickAction('other')">确认</button>
           <button class="btn btn-ghost" style="font-size:13px;padding:9px 18px" onclick="toggleBox('other')">取消</button>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: inspector (弹窗填写，不保存) ===== -->
+<div class="overlay" id="ov-insp">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-head">
+      <div><h3>👤 填写检查人员</h3></div>
+      <button class="close" onclick="closeInspModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-sub" id="insp-sub">请输入本次巡课教师的姓名。姓名<b>不会保存</b>，提交后自动清空，避免设备换人时误认上一位的姓名。</div>
+      <input type="text" id="inp-insp-name" placeholder="请输入您的姓名" maxlength="12" autocomplete="off" onkeydown="if(event.key==='Enter')confirmInsp()" oninput="this.classList.remove('error')">
+      <div style="display:flex;gap:10px;margin-top:18px">
+        <button class="btn btn-ghost" style="flex:1;font-size:14px;padding:11px 0" onclick="closeInspModal()">取消</button>
+        <button class="btn btn-pri" style="flex:1;font-size:14px;padding:11px 0" onclick="confirmInsp()">确定</button>
       </div>
     </div>
   </div>
@@ -456,9 +482,9 @@ let backendUnlocked=false;
 // STATE
 let S={grade:'一年级',wdIdx:0,rec:{},fb:'',inspector:'',modal:null};
 
-function loadS(){try{const d=JSON.parse(localStorage.getItem('ps'));if(d){S.rec=d.rec||{};S.inspector=d.inspector||''}}catch(e){}}
-function saveS(){try{localStorage.setItem('ps',JSON.stringify({rec:S.rec,inspector:S.inspector}))}catch(e){}}
-function saveInsp(){S.inspector=$('inp-inspector').value;saveS()}
+// 检查人员姓名只在内存中使用，绝不写入 localStorage（刷新/换人后需重新填写，避免混淆）
+function loadS(){try{const d=JSON.parse(localStorage.getItem('ps'));if(d&&d.rec)S.rec=d.rec||{};}catch(e){}}
+function saveS(){try{localStorage.setItem('ps',JSON.stringify({rec:S.rec}))}catch(e){}}
 function $(id){return document.getElementById(id)}
 function getDate(){return $('inp-date').value}
 function getWday(){return WDAYS[S.wdIdx]}
@@ -477,9 +503,40 @@ function init(){
   try{localStorage.setItem('cb_lastdate',today);}catch(e){}
   let di=now.getDay()-1;if(di<0||di>4)di=0;
   S.wdIdx=di;$('inp-wday').value=di;
-  if(S.inspector)$('inp-inspector').value=S.inspector;
+  refreshInspBtn();
   renderGTabs();renderGrid();updateProg();
   // 腾讯云免配置：自动连接并拉取云端（已在脚本末尾触发）
+}
+
+// INSPECTOR 弹窗填写（仅内存，提交后清空）
+let __inspAfter=false;
+function refreshInspBtn(){
+  const b=$('btn-insp'),t=$('insp-txt');
+  if(!b||!t)return;
+  t.textContent=S.inspector?S.inspector+'（可点更换）':'点击填写姓名';
+  b.classList.toggle('filled',!!S.inspector);
+}
+function openInspModal(after){
+  __inspAfter=!!after;
+  $('inp-insp-name').value='';
+  $('inp-insp-name').classList.remove('error');
+  $('insp-sub').innerHTML='请输入本次巡课教师的姓名。姓名<b>不会保存</b>，提交后自动清空，避免设备换人时误认上一位的姓名。';
+  $('ov-insp').classList.add('on');
+  setTimeout(()=>{const i=$('inp-insp-name');if(i)i.focus();},80);
+}
+function closeInspModal(){__inspAfter=false;$('ov-insp').classList.remove('on');}
+function confirmInsp(){
+  const v=$('inp-insp-name').value.trim();
+  if(!v){
+    $('inp-insp-name').classList.add('error');
+    $('insp-sub').innerHTML='<span style="color:var(--err)">请先填写姓名再确定（必填）</span>';
+    return;
+  }
+  S.inspector=v;   // 仅内存记录，不写 localStorage
+  refreshInspBtn();
+  const go=__inspAfter;__inspAfter=false;
+  closeInspModal();
+  if(go)doSubmit();
 }
 
 function onDateChange(){} // 日期自动固定，不允许手动选择
@@ -550,7 +607,7 @@ function doRename(){
 }
 function pickAction(action){
   if(!S.modal)return;
-  const d=getDate(),insp=S.inspector||$('inp-inspector').value||'未填写';
+  const d=getDate(),insp=S.inspector||'未填写';
   const{grade,cls,orig}=S.modal,k=`${d}_${grade}_${cls}`;
   let text='';
   if(action==='other'){
@@ -572,10 +629,14 @@ function undoAction(){
 
 // SUBMIT
 function doSubmit(){
-  // Check inspector name
-  const insp=S.inspector||$('inp-inspector').value.trim();
-  if(!insp){$('inp-inspector').classList.add('error');$('submit-hint').textContent='请填写检查人员姓名（必填）';$('submit-hint').style.color='var(--err)';return;}
-  $('inp-inspector').classList.remove('error');
+  // 检查人员：仅内存记录，未填写时弹窗让老师填写（确定后自动继续提交）
+  const insp=(S.inspector||'').trim();
+  if(!insp){
+    $('submit-hint').textContent='请先点击上方按钮填写检查人员姓名（必填）';
+    $('submit-hint').style.color='var(--err)';
+    openInspModal(true);
+    return;
+  }
 
   // 三条反馈均为必填
   const fbArr=[1,2,3].map(i=>$('inp-fb'+i).value.trim());
@@ -618,6 +679,8 @@ function doSubmit(){
   saveS();renderGrid();updateProg();
   $('submit-hint').textContent='';$('submit-hint').style.color='var(--ok)';
   showToast(hadOld?`✅ ${S.grade}已更新提交（覆盖原记录）！`:`✅ ${S.grade}提交成功！数据已同步云端`);
+  // 提交后清空检查人员（不保存），下一位老师必须重新填写，避免混淆
+  S.inspector='';refreshInspBtn();
 }
 let toastTimer=null;
 function showToast(msg){
@@ -629,7 +692,7 @@ function showToast(msg){
 }
 document.addEventListener('DOMContentLoaded',()=>{
   [1,2,3].forEach(i=>$('inp-fb'+i).addEventListener('focus',()=>$('inp-fb'+i).classList.remove('er')));
-  $('inp-inspector').addEventListener('focus',()=>$('inp-inspector').classList.remove('error'));
+  refreshInspBtn();
 });
 
 // PAGE SWITCH
@@ -824,20 +887,13 @@ function restoreToday(){
   const mine=subs.filter(s=>s.date===d&&s.uid===cAuthUid&&Array.isArray(s.records));
   if(!mine.length)return;
   let changed=false;
-  let inspector='';
   for(const s of mine){
-    if(!inspector&&s.inspector)inspector=s.inspector;
     for(const r of s.records){
       if(r&&r.grade&&r.cls){
         const k=`${d}_${r.grade}_${r.cls}`;
         if(!S.rec[k]){S.rec[k]=r;changed=true;}
       }
     }
-  }
-  if(!S.inspector&&inspector){
-    S.inspector=inspector;
-    const el=$('inp-inspector');if(el)el.value=inspector;
-    changed=true;
   }
   if(changed)saveS();
 }
@@ -1194,7 +1250,7 @@ function exportData(){
     exportTime:new Date().toISOString(),
     submissions:JSON.parse(localStorage.getItem('pss')||'[]'),
     schedule:JSON.parse(localStorage.getItem('perm_schedule')||'null'),
-    state:{rec:S.rec,inspector:S.inspector}
+    state:{rec:S.rec}
   };
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const a=document.createElement('a');
@@ -1215,7 +1271,6 @@ function importData(e){
       if(data.schedule)localStorage.setItem('perm_schedule',JSON.stringify(data.schedule));
       if(data.state){
         S.rec=data.state.rec||{};
-        S.inspector=data.state.inspector||'';
         saveS();
       }
       alert('数据导入成功！');
