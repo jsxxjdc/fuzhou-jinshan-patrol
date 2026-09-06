@@ -512,9 +512,19 @@ function switchPage(p){
   if(p==='backend')renderBE();
 }
 
-// PASSWORD
-function tryBackend(){if(backendUnlocked){switchPage('backend');return;}$('ov-pw').classList.add('on');$('pw-input').value='';$('pw-err').style.display='none';$('pw-input').classList.remove('er');setTimeout(()=>$('pw-input').focus(),100);}
-function checkPW(){if($('pw-input').value===PW){backendUnlocked=true;closePW();switchPage('backend');}else{$('pw-input').classList.add('er');$('pw-err').style.display='block';}}
+// PASSWORD（本设备验证一次后自动记住，之后打开后台不再询问）
+function beUnlocked(){try{return localStorage.getItem('be_unlocked')==='1';}catch(e){return false;}}
+function tryBackend(){
+  if(backendUnlocked||beUnlocked()){backendUnlocked=true;switchPage('backend');return;}
+  $('ov-pw').classList.add('on');$('pw-input').value='';$('pw-err').style.display='none';$('pw-input').classList.remove('er');setTimeout(()=>$('pw-input').focus(),100);
+}
+function checkPW(){
+  if($('pw-input').value===PW){
+    backendUnlocked=true;
+    try{localStorage.setItem('be_unlocked','1');}catch(e){}
+    closePW();switchPage('backend');
+  }else{$('pw-input').classList.add('er');$('pw-err').style.display='block';}
+}
 function closePW(){$('ov-pw').classList.remove('on');}
 
 // PERMANENT EDIT
@@ -758,8 +768,9 @@ function rOverview(subs,all){
   h+=`<div class="sec"><h3><span class="dot"></span>最近提交记录</h3>`;
   if(!subs.length)h+='<div class="empty" style="padding:20px">暂无提交记录</div>';
   else{
-    h+=`<table class="dt"><thead><tr><th>日期</th><th>星期</th><th>检查人员</th><th>检查班数</th><th>反馈</th></tr></thead><tbody>`;
-    for(const s of subs.slice().reverse().slice(0,10))h+=`<tr><td>${s.date}</td><td>${s.weekday}</td><td>${s.inspector}</td><td>${s.records.length}</td><td style="max-width:300px;word-break:break-all">${s.feedback}</td></tr>`;
+    h+=`<table class="dt"><thead><tr><th>提交时间</th><th>日期</th><th>星期</th><th>检查人员</th><th>检查班数</th><th>反馈</th></tr></thead><tbody>`;
+    const recent=subs.slice().sort((a,b)=>(a.ts>b.ts?-1:1)).slice(0,10);
+    for(const s of recent)h+=`<tr><td><strong>${fmtTime(s.ts)}</strong></td><td>${s.date}</td><td>${s.weekday}</td><td>${s.inspector}</td><td>${s.records.length}</td><td style="max-width:300px;word-break:break-all">${s.feedback}</td></tr>`;
     h+=`</tbody></table>`;
   }
   h+=`</div>`;
@@ -770,6 +781,16 @@ function brow(label,val,max,type,labelText){
   const pct=val/max*100;
   const cls=type==='praise'?'bi-praise':type==='atten'?'bi-atten':'bi-other';
   return `<div class="brow"><div class="bl">${label}</div><div class="bt"><div class="bi ${cls}" style="width:${Math.max(pct,5)}%">${labelText||''}</div></div><div class="bc">${val}</div></div>`;
+}
+
+function fmtTime(iso){
+  if(!iso)return '-';
+  try{
+    const d=new Date(iso);
+    if(isNaN(d.getTime()))return iso;
+    const p=n=>String(n).padStart(2,'0');
+    return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
+  }catch(e){return iso;}
 }
 
 function rByClass(all){
@@ -795,15 +816,23 @@ function rByClass(all){
 }
 
 function rByDay(subs,all){
-  const dm={};
-  for(const s of subs){const d=s.date;if(!dm[d])dm[d]={weekday:s.weekday,inspector:s.inspector,rec:[],fb:s.feedback};dm[d].rec.push(...s.records);}
-  const dates=Object.keys(dm).sort().reverse();
-  let h=`<div class="sec"><h3><span class="dot"></span>按日期统计</h3>`;
-  if(!dates.length)h+='<div class="empty" style="padding:20px">暂无数据</div>';
+  // 按日期范围过滤后，列出每一次提交（含提交时间与检查人员）
+  const gf=$('st-grade').value,ds=$('st-ds').value,de=$('st-de').value;
+  let list=subs.filter(s=>s.date);
+  if(ds)list=list.filter(s=>s.date>=ds);
+  if(de)list=list.filter(s=>s.date<=de);
+  if(gf!=='all')list=list.filter(s=>s.records&&s.records.some(r=>r.grade===gf));
+  list=list.slice().sort((a,b)=>(a.ts<b.ts?1:-1));
+  let h=`<div class="sec"><h3><span class="dot"></span>按日期统计（每次提交）</h3>`;
+  if(!list.length)h+='<div class="empty" style="padding:20px">暂无数据</div>';
   else{
-    h+=`<table class="dt"><thead><tr><th>日期</th><th>星期</th><th>检查人员</th><th>班数</th><th>表扬</th><th>关注</th><th>其他</th><th>反馈</th></tr></thead><tbody>`;
-    for(const d of dates){const dy=dm[d],p=dy.rec.filter(r=>r.action==='praise').length,n=dy.rec.filter(r=>r.action==='need-attention').length,o=dy.rec.filter(r=>r.action==='other').length;
-      h+=`<tr><td><strong>${d}</strong></td><td>${dy.weekday}</td><td>${dy.inspector}</td><td>${dy.rec.length}</td><td><span class="bdg g">${p}</span></td><td><span class="bdg y">${n}</span></td><td><span class="bdg b">${o}</span></td><td style="max-width:200px;word-break:break-all;font-size:12px">${dy.fb||'-'}</td></tr>`;}
+    h+=`<table class="dt"><thead><tr><th>提交时间</th><th>日期</th><th>星期</th><th>检查人员</th><th>班数</th><th>表扬</th><th>关注</th><th>其他</th><th>反馈</th></tr></thead><tbody>`;
+    for(const s of list){
+      const p=s.records.filter(r=>r.action==='praise').length;
+      const n=s.records.filter(r=>r.action==='need-attention').length;
+      const o=s.records.filter(r=>r.action==='other').length;
+      h+=`<tr><td><strong>${fmtTime(s.ts)}</strong></td><td>${s.date}</td><td>${s.weekday}</td><td>${s.inspector}</td><td>${s.records.length}</td><td><span class="bdg g">${p}</span></td><td><span class="bdg y">${n}</span></td><td><span class="bdg b">${o}</span></td><td style="max-width:180px;word-break:break-all;font-size:12px">${s.feedback||'-'}</td></tr>`;
+    }
     h+=`</tbody></table>`;
   }
   h+=`</div>`;return h;
@@ -845,10 +874,10 @@ function rIssues(subs,all){
   let h=`<div class="sec"><h3><span class="dot"></span>巡课反馈汇总</h3>`;
   const fs=subs.filter(s=>s.feedback);
   if(!fs.length)h+='<div class="empty" style="padding:20px">暂无反馈问题</div>';
-  else{h+=`<ul class="issues">`;for(const s of fs.slice().reverse())h+=`<li><span class="im">${s.date} ${s.weekday}</span><span class="bdg gray">${s.inspector}</span><span class="it">${s.feedback}</span></li>`;h+=`</ul>`;}
+  else{h+=`<ul class="issues">`;for(const s of fs.slice().sort((a,b)=>(a.ts<b.ts?1:-1)))h+=`<li><span class="im">${fmtTime(s.ts)}</span><span class="bdg gray">${s.inspector}</span><span class="it">${s.feedback}</span></li>`;h+=`</ul>`;}
   const att=all.filter(r=>r.action==='need-attention');
-  if(att.length){h+=`<h3 style="margin-top:20px"><span class="dot" style="background:var(--warn)"></span>需关注教师明细</h3><table class="dt"><thead><tr><th>日期</th><th>班级</th><th>教师</th><th>备注</th></tr></thead><tbody>`;
-    for(const r of att)h+=`<tr><td>${r.date}</td><td>${r.grade} ${r.cls}</td><td><strong>${r.display||r.orig}</strong></td><td>${r.text||'-'}</td></tr>`;
+  if(att.length){h+=`<h3 style="margin-top:20px"><span class="dot" style="background:var(--warn)"></span>需关注教师明细</h3><table class="dt"><thead><tr><th>提交时间</th><th>日期</th><th>班级</th><th>教师</th><th>检查人员</th><th>备注</th></tr></thead><tbody>`;
+    for(const r of att)h+=`<tr><td>${fmtTime(r.ts)}</td><td>${r.date}</td><td>${r.grade} ${r.cls}</td><td><strong>${r.display||r.orig}</strong></td><td>${r.inspector||'-'}</td><td>${r.text||'-'}</td></tr>`;
     h+=`</tbody></table>`;}
   h+=`</div>`;return h;
 }
@@ -864,13 +893,13 @@ function exportExcel(){
 
   // Sheet 1: 巡课明细
   const detailData=all.map(r=>({
-    '日期':r.date,'星期':r.weekday,'年级':r.grade,'班级':r.cls,
+    '提交时间':fmtTime(r.ts),'日期':r.date,'星期':r.weekday,'年级':r.grade,'班级':r.cls,
     '教师(原)':r.orig,'教师(显示)':r.display||r.orig,
     '评价':r.action==='praise'?'表扬':r.action==='need-attention'?'需要关注':'其他',
     '备注':r.text||'','检查人员':r.inspector
   }));
   const ws1=XLSX.utils.json_to_sheet(detailData);
-  ws1['!cols']=[{wch:12},{wch:8},{wch:8},{wch:8},{wch:12},{wch:12},{wch:10},{wch:20},{wch:10}];
+  ws1['!cols']=[{wch:18},{wch:12},{wch:8},{wch:8},{wch:8},{wch:12},{wch:12},{wch:10},{wch:20},{wch:10}];
   XLSX.utils.book_append_sheet(wb,ws1,'巡课明细');
 
   // Sheet 2: 按班级统计
@@ -888,17 +917,17 @@ function exportExcel(){
   XLSX.utils.book_append_sheet(wb,ws3,'教师表扬排行');
 
   // Sheet 4: 提交记录
-  const subData=subs.map(s=>({'日期':s.date,'星期':s.weekday,'检查人员':s.inspector,'检查班数':s.records.length,'反馈':s.feedback}));
+  const subData=subs.map(s=>({'提交时间':fmtTime(s.ts),'日期':s.date,'星期':s.weekday,'检查人员':s.inspector,'检查班数':s.records.length,'反馈':s.feedback}));
   const ws4=XLSX.utils.json_to_sheet(subData);
   XLSX.utils.book_append_sheet(wb,ws4,'提交记录');
 
   // Sheet 5: 问题汇总
   const issueData=[];
   for(const s of subs.filter(s=>s.feedback)){
-    issueData.push({'日期':s.date,'星期':s.weekday,'检查人员':s.inspector,'反馈问题':s.feedback});
+    issueData.push({'提交时间':fmtTime(s.ts),'日期':s.date,'星期':s.weekday,'检查人员':s.inspector,'反馈问题':s.feedback});
   }
   for(const r of all.filter(r=>r.action==='need-attention')){
-    issueData.push({'日期':r.date,'星期':r.weekday,'班级':`${r.grade} ${r.cls}`,'教师':r.display||r.orig,'备注':r.text||''});
+    issueData.push({'提交时间':fmtTime(r.ts),'日期':r.date,'星期':r.weekday,'班级':`${r.grade} ${r.cls}`,'教师':r.display||r.orig,'检查人员':r.inspector||'','备注':r.text||''});
   }
   if(issueData.length){
     const ws5=XLSX.utils.json_to_sheet(issueData);
