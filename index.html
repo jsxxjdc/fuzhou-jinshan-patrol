@@ -851,24 +851,14 @@ function delSubmission(ts){
   if(!confirm('确定删除该条巡课提交记录吗？删除后各设备均不可见。'))return;
   const f=getFlags();
   if(f.deleted.indexOf(ts)<0)f.deleted.push(ts);
-  // 同步清理巡课端已反馈状态：被删除记录对应班级恢复为待反馈
-  let subs=[];try{subs=JSON.parse(localStorage.getItem('pss')||'[]');}catch(e){}
-  const target=subs.find(s=>s.ts===ts);
-  if(target&&Array.isArray(target.records)){
-    for(const r of target.records){
-      if(r.grade&&r.cls){
-        const k=`${getDate()}_${r.grade}_${r.cls}`;
-        if(S.rec[k]){delete S.rec[k];}
-        f.submitted=(f.submitted||[]).filter(x=>x!==k);
-      }
-    }
-  }
   saveFlags(f);
+  // 本地立即移除（巡课端恢复待反馈由 syncDeletedFromCloud 在云端同步后统一处理）
+  let subs=[];try{subs=JSON.parse(localStorage.getItem('pss')||'[]');}catch(e){}
   subs=subs.filter(s=>s.ts!==ts);
   localStorage.setItem('pss',JSON.stringify(subs));
   pushToCloud();
   renderBE();renderGrid();updateProg();
-  showToast('🗑️ 该条记录已删除，巡课端对应班级已恢复待反馈');
+  showToast('🗑️ 该条记录已删除，巡课端对应班级恢复待反馈');
 }
 
 function clearAllData(){
