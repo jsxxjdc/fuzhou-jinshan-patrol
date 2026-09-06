@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>福州金山小学 2026-2027学年 早读巡课系统</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --pri: #4f46e5; --pri-l: #818cf8; --pri-d: #3730a3; --pri-bg: #eef2ff;
+    --ok: #059669; --ok-l: #d1fae5; --ok-bg: #ecfdf5;
+    --warn: #d97706; --warn-l: #fef3c7; --warn-bg: #fffbeb;
+    --err: #dc2626; --err-l: #fee2e2; --err-bg: #fef2f2;
+    --cyan: #0891b2; --cyan-l: #cffafe;
+    --g50: #f8fafc; --g100: #f1f5f9; --g200: #e2e8f0; --g300: #cbd5e1;
+    --g400: #94a3b8; --g500: #64748b; --g600: #475569; --g700: #334155; --g800: #1e293b; --g900: #0f172a;
+    --r: 12px; --r-sm: 8px; --r-lg: 16px;
+    --sh: 0 1px 3px rgba(0,0,0,.08); --sh-md: 0 4px 12px rgba(0,0,0,.1); --sh-lg: 0 12px 32px rgba(0,0,0,.12);
+    --tr: .2s cubic-bezier(.4,0,.2,1);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Noto Sans SC',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;color:var(--g800);background:var(--g100);overflow-x:hidden}
+
+  /* ===== BG PATTERN ===== */
+  body::before{content:'';position:fixed;inset:0;background:linear-gradient(135deg,#e0e7ff 0%,#f0f9ff 50%,#faf5ff 100%);z-index:-1}
+  body::after{content:'';position:fixed;top:-40%;right:-20%;width:600px;height:600px;background:radial-gradient(circle,rgba(99,102,241,.08) 0%,transparent 70%);border-radius:50%;z-index:-1}
+
+  /* ===== TOP NAV ===== */
+  .topnav{position:sticky;top:0;z-index:100;background:rgba(255,255,255,.88);backdrop-filter:blur(16px) saturate(180%);border-bottom:1px solid rgba(226,232,240,.6);padding:0 28px;height:60px;display:flex;align-items:center;justify-content:space-between}
+  .topnav .brand{display:flex;align-items:center;gap:14px}
+  .topnav .brand .logo{width:42px;height:42px;border-radius:var(--r);background:linear-gradient(135deg,var(--pri),#7c3aed);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:17px;letter-spacing:1px;box-shadow:0 4px 12px rgba(79,70,229,.35)}
+  .topnav .brand .txt h1{font-size:15px;font-weight:700;color:var(--g800);line-height:1.2}
+  .topnav .brand .txt p{font-size:11px;color:var(--g400);font-weight:400}
+  .nav-tabs{display:flex;gap:4px;background:var(--g100);border-radius:var(--r);padding:4px}
+  .nav-tab{padding:8px 22px;border:none;border-radius:var(--r-sm);font-size:13px;font-weight:600;cursor:pointer;transition:var(--tr);font-family:inherit;background:transparent;color:var(--g500)}
+  .nav-tab.active{background:#fff;color:var(--pri);box-shadow:var(--sh)}
+  .nav-tab:not(.active):hover{color:var(--g700)}
+
+  /* ===== PAGES ===== */
+  .pg{display:none;padding:20px 28px 40px;max-width:1480px;margin:0 auto}
+  .pg.on{display:block;animation:fadeUp .3s ease}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  /* ===== CARDS ===== */
+  .card{background:rgba(255,255,255,.85);backdrop-filter:blur(12px);border:1px solid rgba(226,232,240,.5);border-radius:var(--r-lg);padding:20px 24px;box-shadow:var(--sh)}
+
+  /* ===== TOOLBAR ===== */
+  .bar{display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;margin-bottom:16px}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field label{font-size:11px;font-weight:600;color:var(--g400);text-transform:uppercase;letter-spacing:.5px}
+  .field input,.field select{padding:9px 14px;border:1.5px solid var(--g200);border-radius:var(--r-sm);font-size:14px;font-family:inherit;background:#fff;transition:var(--tr);min-width:130px;color:var(--g700)}
+  .field input:focus,.field select:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(79,70,229,.1)}
+  .field input.error{border-color:var(--err);box-shadow:0 0 0 3px rgba(220,38,38,.1)}
+
+  /* progress */
+  .prog{display:flex;align-items:center;gap:10px;margin-left:auto}
+  .prog .track{width:200px;height:7px;background:var(--g200);border-radius:4px;overflow:hidden}
+  .prog .fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--pri),#7c3aed);transition:width .4s}
+  .prog .lbl{font-size:13px;font-weight:600;color:var(--g500);white-space:nowrap}
+
+  /* ===== GRADE TABS ===== */
+  .gtabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+  .gtab{padding:9px 22px;border:none;border-radius:var(--r);font-size:13px;font-weight:600;cursor:pointer;transition:var(--tr);font-family:inherit;background:rgba(255,255,255,.6);color:var(--g500);border:1.5px solid transparent}
+  .gtab.on{background:#fff;color:var(--pri);box-shadow:var(--sh);border-color:var(--pri-l)}
+  .gtab:not(.on):hover{background:rgba(255,255,255,.9);color:var(--g700)}
+
+  /* ===== CLASS GRID ===== */
+  .cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+  .ccard{background:#fff;border:2px solid var(--g100);border-radius:var(--r);padding:16px;transition:var(--tr);position:relative;overflow:hidden}
+  .ccard::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--g200);transition:var(--tr)}
+  .ccard:hover{box-shadow:var(--sh-md);transform:translateY(-2px);border-color:var(--g300)}
+  .ccard:hover::before{background:var(--pri-l)}
+  .ccard.praised{border-color:var(--ok);background:var(--ok-bg)}.ccard.praised::before{background:var(--ok)}
+  .ccard.attention{border-color:var(--warn);background:var(--warn-bg)}.ccard.attention::before{background:var(--warn)}
+  .ccard.othertag{border-color:var(--cyan);background:var(--cyan-l)}.ccard.othertag::before{background:var(--cyan)}
+  .ccard .cnum{font-size:11px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+  .ccard .tname{font-size:15px;font-weight:700;color:var(--g800);cursor:pointer;padding:6px 10px;border-radius:var(--r-sm);transition:var(--tr);display:inline-block;max-width:100%;word-break:break-all;line-height:1.4}
+  .ccard .tname:hover{background:var(--pri-bg);color:var(--pri)}
+  .ccard .tbadge{position:absolute;top:10px;right:10px;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700;letter-spacing:.3px}
+  .tbadge.p{background:var(--ok);color:#fff}.tbadge.n{background:var(--warn);color:#fff}.tbadge.o{background:var(--cyan);color:#fff}
+
+  /* ===== SUBMIT ===== */
+  .submit-box{margin-top:18px;padding:20px 24px}
+  .submit-box h3{font-size:14px;font-weight:700;margin-bottom:10px;color:var(--g700);display:flex;align-items:center;gap:8px}
+  .submit-box h3 .dot{width:8px;height:8px;border-radius:50%;background:var(--err)}
+  .submit-box textarea{width:100%;padding:12px 14px;border:1.5px solid var(--g200);border-radius:var(--r-sm);font-size:14px;font-family:inherit;resize:vertical;min-height:72px;transition:var(--tr)}
+  .submit-box textarea:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(79,70,229,.08)}
+  .submit-box textarea.er{border-color:var(--err);box-shadow:0 0 0 3px rgba(220,38,38,.08)}
+  .submit-row{display:flex;align-items:center;gap:12px;margin-top:12px}
+  .btn{padding:11px 30px;border:none;border-radius:var(--r-sm);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;transition:var(--tr)}
+  .btn-pri{background:linear-gradient(135deg,var(--pri),#7c3aed);color:#fff;box-shadow:0 4px 14px rgba(79,70,229,.3)}
+  .btn-pri:hover{box-shadow:0 6px 20px rgba(79,70,229,.4);transform:translateY(-1px)}
+  .btn-pri:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+  .btn-ghost{background:var(--g100);color:var(--g500)}
+  .btn-ghost:hover{background:var(--g200)}
+  .hint{font-size:12px;color:var(--g400)}
+
+  /* ===== MODAL ===== */
+  .overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);backdrop-filter:blur(6px);z-index:2000;justify-content:center;align-items:center}
+  .overlay.on{display:flex}
+  .modal{background:#fff;border-radius:var(--r-lg);padding:0;max-width:440px;width:92%;box-shadow:var(--sh-lg);animation:modalIn .25s ease;overflow:hidden}
+  @keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(12px)}to{opacity:1;transform:none}}
+  .modal-head{padding:22px 24px 0;display:flex;align-items:flex-start;justify-content:space-between}
+  .modal-head h3{font-size:17px;font-weight:700;color:var(--g800)}
+  .modal-head .close{width:32px;height:32px;border:none;border-radius:var(--r-sm);background:var(--g100);cursor:pointer;font-size:18px;color:var(--g400);display:flex;align-items:center;justify-content:center;transition:var(--tr);flex-shrink:0}
+  .modal-head .close:hover{background:var(--g200);color:var(--g600)}
+  .modal-body{padding:14px 24px 24px}
+  .modal-sub{font-size:13px;color:var(--g500);margin-bottom:16px}
+  .modal-sub b{color:var(--pri);font-weight:700}
+
+  .opt-list{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+  .opt-btn{padding:14px 16px;border:2px solid var(--g100);border-radius:var(--r);background:#fff;cursor:pointer;text-align:left;transition:var(--tr);display:flex;align-items:center;gap:14px;font-family:inherit}
+  .opt-btn:hover{border-color:var(--pri);background:var(--pri-bg)}
+  .opt-btn .ico{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+  .opt-btn .lbl{font-size:14px;font-weight:700;color:var(--g700)}
+  .opt-btn .desc{font-size:12px;color:var(--g400);margin-top:1px}
+  .ico-p{background:var(--ok-l);color:var(--ok)}
+  .ico-n{background:var(--warn-l);color:var(--warn)}
+  .ico-o{background:var(--cyan-l);color:var(--cyan)}
+  .ico-r{background:var(--pri-bg);color:var(--pri)}
+
+  .sub-input{display:none;margin-bottom:12px}
+  .sub-input textarea,.sub-input input{width:100%;padding:11px 14px;border:1.5px solid var(--g200);border-radius:var(--r-sm);font-size:14px;font-family:inherit;transition:var(--tr)}
+  .sub-input textarea:focus,.sub-input input:focus{outline:none;border-color:var(--pri)}
+  .sub-input textarea{resize:vertical;min-height:64px}
+  .sub-actions{display:flex;gap:8px;margin-top:8px}
+
+  /* ===== BACKEND ===== */
+  .be-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px}
+  .be-head h2{font-size:18px;font-weight:700;color:var(--g800)}
+  .filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .filters select,.filters input{padding:8px 12px;border:1.5px solid var(--g200);border-radius:var(--r-sm);font-size:13px;font-family:inherit;background:#fff}
+  .filters select:focus,.filters input:focus{outline:none;border-color:var(--pri)}
+
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:20px}
+  .scard{background:#fff;border:1px solid rgba(226,232,240,.5);border-radius:var(--r);padding:18px 16px;text-align:center;transition:var(--tr)}
+  .scard:hover{box-shadow:var(--sh-md);transform:translateY(-1px)}
+  .scard .num{font-size:34px;font-weight:900;line-height:1}
+  .scard .lbl{font-size:12px;color:var(--g400);margin-top:6px;font-weight:500}
+  .scard.c-pri .num{color:var(--pri)}
+  .scard.c-ok .num{color:var(--ok)}
+  .scard.c-warn .num{color:var(--warn)}
+  .scard.c-err .num{color:var(--err)}
+  .scard.c-cyan .num{color:var(--cyan)}
+
+  .sec{background:#fff;border:1px solid rgba(226,232,240,.5);border-radius:var(--r-lg);padding:20px 24px;margin-bottom:16px}
+  .sec h3{font-size:15px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px;color:var(--g700)}
+  .sec h3 .dot{width:8px;height:8px;border-radius:50%;background:var(--pri)}
+
+  table.dt{width:100%;border-collapse:collapse;font-size:13px}
+  table.dt th{background:var(--g50);padding:10px 14px;text-align:left;font-weight:700;color:var(--g500);border-bottom:2px solid var(--g200);font-size:12px;text-transform:uppercase;letter-spacing:.3px}
+  table.dt td{padding:10px 14px;border-bottom:1px solid var(--g100);color:var(--g600)}
+  table.dt tr:hover td{background:var(--g50)}
+  .bdg{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+  .bdg.g{background:var(--ok-l);color:var(--ok)}.bdg.y{background:var(--warn-l);color:#92400e}.bdg.b{background:var(--cyan-l);color:var(--cyan)}.bdg.gray{background:var(--g100);color:var(--g500)}
+
+  .charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+  .cbox{background:var(--g50);border-radius:var(--r);padding:18px}
+  .cbox h4{font-size:14px;font-weight:700;margin-bottom:14px;color:var(--g600)}
+  .brow{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .brow .bl{width:90px;font-size:12px;color:var(--g500);text-align:right;flex-shrink:0;font-weight:600}
+  .brow .bt{flex:1;height:24px;background:var(--g200);border-radius:6px;overflow:hidden}
+  .brow .bi{height:100%;border-radius:6px;display:flex;align-items:center;padding-left:8px;font-size:11px;color:#fff;font-weight:700;min-width:fit-content;transition:width .4s}
+  .bi-praise{background:linear-gradient(90deg,var(--ok),#34d399)}
+  .bi-atten{background:linear-gradient(90deg,var(--warn),#fbbf24)}
+  .bi-other{background:linear-gradient(90deg,var(--cyan),#22d3ee)}
+  .brow .bc{font-size:13px;font-weight:700;color:var(--g500);width:32px;text-align:right}
+
+  .issues{list-style:none}
+  .issues li{padding:14px 16px;background:var(--g50);border-radius:var(--r);margin-bottom:10px;font-size:13px;border-left:4px solid var(--warn);display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .issues li .im{font-weight:700;color:var(--g600);white-space:nowrap}
+  .issues li .it{color:var(--g700)}
+
+  .empty{text-align:center;padding:48px 20px;color:var(--g400);font-size:14px}
+  .empty .ei{font-size:48px;margin-bottom:12px}
+
+  /* ===== PASSWORD MODAL ===== */
+  .pw-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);backdrop-filter:blur(8px);z-index:3000;justify-content:center;align-items:center}
+  .pw-overlay.on{display:flex}
+  .pw-box{background:#fff;border-radius:var(--r-lg);padding:32px;max-width:380px;width:90%;box-shadow:var(--sh-lg);text-align:center;animation:modalIn .25s ease}
+  .pw-box .pw-icon{width:64px;height:64px;border-radius:50%;background:var(--pri-bg);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:28px}
+  .pw-box h3{font-size:18px;font-weight:700;margin-bottom:6px;color:var(--g800)}
+  .pw-box p{font-size:13px;color:var(--g400);margin-bottom:20px}
+  .pw-box input{width:100%;padding:12px 16px;border:2px solid var(--g200);border-radius:var(--r);font-size:16px;font-family:inherit;text-align:center;letter-spacing:4px;margin-bottom:12px;transition:var(--tr)}
+  .pw-box input:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 4px rgba(79,70,229,.1)}
+  .pw-box input.er{border-color:var(--err);animation:shake .3s}
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+  .pw-err{font-size:12px;color:var(--err);margin-bottom:10px;display:none}
+  .pw-box .btn{width:100%}
+
+  /* ===== PERM EDIT MODAL ===== */
+  .perm-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);backdrop-filter:blur(6px);z-index:2500;justify-content:center;align-items:center}
+  .perm-overlay.on{display:flex}
+  .perm-box{background:#fff;border-radius:var(--r-lg);padding:0;max-width:460px;width:92%;box-shadow:var(--sh-lg);animation:modalIn .25s ease;overflow:hidden}
+  .perm-head{padding:22px 24px 0;display:flex;align-items:flex-start;justify-content:space-between}
+  .perm-head h3{font-size:17px;font-weight:700;color:var(--g800)}
+  .perm-body{padding:14px 24px 24px}
+  .perm-body .field{margin-bottom:12px}
+  .perm-body .field label{font-size:12px;font-weight:600;color:var(--g500);margin-bottom:4px;display:block}
+  .perm-body .field select,.perm-body .field input{width:100%;padding:10px 14px;border:1.5px solid var(--g200);border-radius:var(--r-sm);font-size:14px;font-family:inherit}
+  .perm-body .field select:focus,.perm-body .field input:focus{outline:none;border-color:var(--pri)}
+
+  @media(max-width:768px){.bar{flex-direction:column}.cgrid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}.stats{grid-template-columns:repeat(2,1fr)}.topnav{flex-direction:column;height:auto;padding:12px 16px;gap:8px}.pg{padding:12px 14px 32px}}
+</style>
+</head>
+<body>
+
+<!-- ===== TOP NAV ===== -->
+<nav class="topnav">
+  <div class="brand">
+    <div class="logo">金</div>
+    <div class="txt">
+      <h1>福州金山小学 早读巡课系统</h1>
+      <p>2026-2027学年</p>
+    </div>
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="switchPage('patrol')">巡课端</button>
+    <button class="nav-tab" onclick="tryBackend()">后台统计</button>
+  </div>
+</nav>
+
+<!-- ===== 巡课端 ===== -->
+<div id="pg-patrol" class="pg on">
+  <div class="card bar">
+    <div class="field"><label>日期</label><input type="date" id="inp-date" onchange="onDateChange()"></div>
+    <div class="field"><label>星期</label>
+      <select id="inp-wday" onchange="onWdayChange()">
+        <option value="0">星期一</option><option value="1">星期二</option><option value="2">星期三</option><option value="3">星期四</option><option value="4">星期五</option>
+      </select>
+    </div>
+    <div class="field"><label>检查人员 <span style="color:var(--err)">*</span></label><input type="text" id="inp-inspector" placeholder="必填" oninput="saveInsp()"></div>
+    <div class="prog">
+      <div class="track"><div class="fill" id="prog-fill" style="width:0%"></div></div>
+      <div class="lbl" id="prog-lbl">0 / 0</div>
+    </div>
+  </div>
+  <div class="gtabs" id="gtabs"></div>
+  <div class="cgrid" id="cgrid"></div>
+  <div class="card submit-box">
+    <h3><span class="dot"></span>巡课反馈 <span style="color:var(--err);font-weight:400;font-size:12px">（必填）</span></h3>
+    <textarea id="inp-fb" placeholder="请填写巡课过程中发现的问题或建议..."></textarea>
+    <div class="submit-row">
+      <button class="btn btn-pri" onclick="doSubmit()">提交巡课记录</button>
+      <span class="hint" id="submit-hint"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 后台统计 ===== -->
+<div id="pg-backend" class="pg">
+  <div class="card be-head">
+    <h2>巡课数据统计</h2>
+    <div class="filters">
+      <select id="st-view" onchange="renderBE()"><option value="overview">总览</option><option value="by-class">按班级</option><option value="by-day">按日期</option><option value="by-week">按周</option><option value="by-teacher">教师表扬排行</option><option value="issues">问题汇总</option></select>
+      <select id="st-grade" onchange="renderBE()"><option value="all">全部年级</option><option value="一年级">一年级</option><option value="二年级">二年级</option><option value="三年级">三年级</option><option value="四年级">四年级</option><option value="五年级">五年级</option><option value="六年级">六年级</option></select>
+      <input type="date" id="st-ds" onchange="renderBE()"><span style="color:var(--g400)">至</span><input type="date" id="st-de" onchange="renderBE()">
+      <button class="btn btn-ghost" style="font-size:13px" onclick="openPermEdit()">永久修改教师</button>
+      <button class="btn btn-ghost" style="font-size:13px" onclick="exportExcel()">导出Excel</button>
+      <button class="btn btn-ghost" style="font-size:13px" onclick="exportData()">导出数据备份</button>
+      <button class="btn btn-ghost" style="font-size:13px" onclick="document.getElementById('import-file').click()">导入数据</button>
+      <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
+    </div>
+  </div>
+  <div id="be-body"></div>
+</div>
+
+<!-- ===== MODAL: teacher action ===== -->
+<div class="overlay" id="ov-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div><h3 id="m-title">老师操作</h3></div>
+      <button class="close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-sub" id="m-sub"></div>
+      <div class="sub-input" id="box-rename">
+        <input type="text" id="inp-rename" placeholder="输入新名字（仅本次巡课）">
+        <div class="sub-actions">
+          <button class="btn btn-pri" style="font-size:13px;padding:9px 18px" onclick="doRename()">确认修改</button>
+          <button class="btn btn-ghost" style="font-size:13px;padding:9px 18px" onclick="toggleBox('rename')">取消</button>
+        </div>
+      </div>
+      <div class="opt-list" id="m-opts">
+        <button class="opt-btn" onclick="pickAction('praise')"><div class="ico ico-p">👍</div><div><div class="lbl">表扬</div><div class="desc">表现优秀，值得肯定</div></div></button>
+        <button class="opt-btn" onclick="pickAction('need-attention')"><div class="ico ico-n">⚠️</div><div><div class="lbl">需要关注</div><div class="desc">存在一定问题，需关注改进</div></div></button>
+        <button class="opt-btn" onclick="toggleBox('other')"><div class="ico ico-o">📝</div><div><div class="lbl">其他</div><div class="desc">自定义备注</div></div></button>
+        <button class="opt-btn" onclick="toggleBox('rename')"><div class="ico ico-r">✏️</div><div><div class="lbl">修改教师名字</div><div class="desc">仅本次巡课生效，不影响总表</div></div></button>
+      </div>
+      <div class="sub-input" id="box-other">
+        <textarea id="inp-other" placeholder="请输入备注内容..."></textarea>
+        <div class="sub-actions">
+          <button class="btn btn-pri" style="font-size:13px;padding:9px 18px" onclick="pickAction('other')">确认</button>
+          <button class="btn btn-ghost" style="font-size:13px;padding:9px 18px" onclick="toggleBox('other')">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PASSWORD MODAL ===== -->
+<div class="pw-overlay" id="ov-pw">
+  <div class="pw-box">
+    <div class="pw-icon">🔐</div>
+    <h3>后台访问验证</h3>
+    <p>请输入管理员密码进入后台统计</p>
+    <input type="password" id="pw-input" placeholder="请输入密码" onkeydown="if(event.key==='Enter')checkPW()">
+    <div class="pw-err" id="pw-err">密码错误，请重试</div>
+    <button class="btn btn-pri" onclick="checkPW()">确认进入</button>
+    <button class="btn btn-ghost" style="margin-top:8px;width:100%" onclick="closePW()">取消</button>
+  </div>
+</div>
+
+<!-- ===== PERMANENT EDIT MODAL ===== -->
+<div class="perm-overlay" id="ov-perm">
+  <div class="perm-box">
+    <div class="perm-head">
+      <h3>永久修改教师名字</h3>
+      <button class="close" onclick="closePermEdit()">&times;</button>
+    </div>
+    <div class="perm-body">
+      <div class="field"><label>选择星期</label>
+        <select id="pe-wday" onchange="loadPermClasses()"><option value="星期一">星期一</option><option value="星期二">星期二</option><option value="星期三">星期三</option><option value="星期四">星期四</option><option value="星期五">星期五</option></select>
+      </div>
+      <div class="field"><label>选择年级</label>
+        <select id="pe-grade" onchange="loadPermClasses()"><option value="一年级">一年级</option><option value="二年级">二年级</option><option value="三年级">三年级</option><option value="四年级">四年级</option><option value="五年级">五年级</option><option value="六年级">六年级</option></select>
+      </div>
+      <div class="field"><label>选择班级</label>
+        <select id="pe-class" onchange="loadPermTeacher()"></select>
+      </div>
+      <div class="field"><label>当前教师</label><input type="text" id="pe-current" readonly style="background:var(--g50)"></div>
+      <div class="field"><label>修改为</label><input type="text" id="pe-new" placeholder="输入新教师名字"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-pri" style="flex:1" onclick="doPermEdit()">保存修改</button>
+        <button class="btn btn-ghost" style="flex:0" onclick="closePermEdit()">取消</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// DATA
+// ============================================================
+const SCHEDULE={"星期一":{"一年级":{"1班":"陈榕","2班":"冉金红","3班":"李惠娟","4班":"邱琳静","5班":"黄荻欣","6班":"陈雅琳","7班":"吴晓予","8班":"刘慧","9班":"詹雯茜","10班":"曾惠芬","11班":"陈素雯","12班":"林倩倩","13班":"王贞莹","14班":"廖淑艺","15班":"郑杏源","16班":"黄泠璇"},"二年级":{"1班":"杨冰","2班":"陈倩","3班":"陈潇潇","4班":"黄丽真","5班":"王亮","6班":"林怡","7班":"谢晖","8班":"陈菁","9班":"邓晨昕","10班":"王梦琪","11班":"刘晨","12班":"刘田田","13班":"吴颖颖","14班":"马文钦"},"三年级":{"1班":"冯舒婷","2班":"兰丽婷","3班":"吴子孺","4班":"张盼盼","5班":"柯晶蕾","6班":"卢秀贞","7班":"林鸿伟","8班":"江晨晞","9班":"王莉莹","10班":"李心甜","11班":"雷蕾","12班":"邹小华","13班":"陈曾怡","14班":"刘海霞"},"四年级":{"1班":"张晨欣","2班":"潘端庄","3班":"陈小凤","4班":"陈华","5班":"吴比","6班":"赵凯恩","7班":"陈小琳","8班":"许志勇","9班":"陈雨珂","10班":"王生林","11班":"黄鑫磊","12班":"江伟铭","13班":"陈海涛","14班":"郑志扬","15班":"陈怡星"},"五年级":{"1班":"林荣健","2班":"林宁子欣","3班":"张新龙","4班":"陈曼婷","5班":"郑吉","6班":"林佳玲","7班":"林楠","8班":"黄欲晓","9班":"鄢敏霞","10班":"黄颖频","11班":"周伟豪","12班":"许艺"},"六年级":{"1班":"张晓飞","2班":"江芬","3班":"陈超凡","4班":"朱菁","5班":"张国亮","6班":"苏天强","7班":"陈铭心","8班":"谢婉妍","9班":"邓文景","10班":"陈新荷","11班":"林代尉","12班":"罗秀丽"}},"星期二":{"一年级":{"1班":"宁子叶","2班":"冉金红","3班":"廖义皇","4班":"陈少兰","5班":"郑阳","6班":"危伟","7班":"林丹丹","8班":"刘慧","9班":"黄美芳","10班":"王旭祺","11班":"杨锋","12班":"龚叶敏","13班":"林惠","14班":"李智龙","15班":"林桂泽","16班":"饶春燕"},"二年级":{"1班":"蒋斌","2班":"姚丹","3班":"李星雨","4班":"林翠","5班":"陈捷玲","6班":"黄冰琳","7班":"谢晖","8班":"黄睿丹","9班":"邓晨昕","10班":"曾娴雅","11班":"周展","12班":"杨薇薇","13班":"吴颖颖","14班":"刘雪阳"},"三年级":{"1班":"陈雪芳","2班":"潘秀","3班":"袁明婷","4班":"黄丽群","5班":"陈丹云","6班":"陈艳芳","7班":"李秀丽","8班":"黄锦垣","9班":"刘心","10班":"李心甜","11班":"蒋小琴","12班":"卓杨晶","13班":"罗英","14班":"陈曾怡"},"四年级":{"1班":"张樱","2班":"陈仕意","3班":"洪硕夫","4班":"蒯梅钦","5班":"王璇","6班":"陈艳萍","7班":"林志栗","8班":"薛茜匀（谢巧玲）","9班":"林圣涛","10班":"瞿超域","11班":"吴楠","12班":"麦晓艳","13班":"陈海涛","14班":"郑灵","15班":"陈思琳"},"五年级":{"1班":"唐文彬","2班":"张捷","3班":"林姗","4班":"王嘉俊","5班":"郑吉","6班":"林佳玲","7班":"张静","8班":"赵彬","9班":"彭丽彬","10班":"林孟庭","11班":"林南希","12班":"陈冠中"},"六年级":{"1班":"徐奕彬","2班":"林敏敏","3班":"陈恺琪","4班":"吴昱立","5班":"姚睿华","6班":"苏天强","7班":"王晓珊","8班":"钟杨洁","9班":"邓文景","10班":"宋晓岩（肖婷）","11班":"林莹","12班":"陈亮"}},"星期三":{"一年级":{"1班":"陈榕","2班":"刘洁玲","3班":"袁明婷","4班":"陈少兰","5班":"李智龙","6班":"陈雅琳","7班":"方游璘","8班":"杨清梅","9班":"詹雯茜","10班":"曾惠芬","11班":"陈素雯","12班":"林倩倩","13班":"陈晓丽","14班":"王贞莹","15班":"郑杏源","16班":"黄泠璇"},"二年级":{"1班":"杨冰","2班":"陈倩","3班":"陈潇潇","4班":"黄丽真","5班":"王亮","6班":"林怡","7班":"谢晖","8班":"陈菁","9班":"黄艳","10班":"王梦琪","11班":"刘晨","12班":"刘田田","13班":"周展","14班":"陈玮滢"},"三年级":{"1班":"林云（李立婷）","2班":"潘秀","3班":"吴子孺","4班":"林圣婕","5班":"柯晶蕾","6班":"卢秀贞","7班":"林鸿伟","8班":"江晨晞","9班":"王莉莹","10班":"李心甜","11班":"雷蕾","12班":"邹小华","13班":"张晓婷","14班":"刘海霞"},"四年级":{"1班":"张晨欣","2班":"潘端庄","3班":"李海燕","4班":"陈华","5班":"王璇","6班":"赵凯恩","7班":"陈小琳","8班":"薛茜匀（谢巧玲）","9班":"陈雨珂","10班":"王生林","11班":"黄鑫磊","12班":"江伟铭","13班":"林润琼","14班":"郑志扬","15班":"陈怡星"},"五年级":{"1班":"林巧梅","2班":"林宁子欣","3班":"王嘉俊","4班":"陈曼婷","5班":"刘凤琴","6班":"吴含","7班":"陈峰","8班":"黄欲晓","9班":"鄢敏霞","10班":"黄颖频","11班":"周伟豪","12班":"陈冠中"},"六年级":{"1班":"张晓飞","2班":"徐奕彬","3班":"陈超凡","4班":"朱菁","5班":"张国亮","6班":"黄雨青","7班":"陈铭心","8班":"谢婉妍","9班":"林桂泽","10班":"李秋云","11班":"林代尉","12班":"罗秀丽"}},"星期四":{"一年级":{"1班":"宁子叶","2班":"陈博文","3班":"林龙杰","4班":"邱琳静","5班":"郑晓辉","6班":"陈雅琳","7班":"吴晓予","8班":"林丹丹","9班":"詹雯茜","10班":"饶春燕","11班":"廖义皇","12班":"张和平","13班":"陈晓丽","14班":"廖淑艺","15班":"杨清梅","16班":"陈海欣"},"二年级":{"1班":"蒋斌","2班":"李巧丹","3班":"叶孝明","4班":"何新","5班":"陈娇","6班":"黄冰琳","7班":"黄铃航","8班":"黄睿丹","9班":"陈勇","10班":"李星雨","11班":"林境秀（刘瑾）","12班":"吴颖颖","13班":"陈郭杭","14班":"陈潇潇"},"三年级":{"1班":"林云（李立婷）","2班":"兰丽婷","3班":"陈诺","4班":"郑灵","5班":"陆舒敏（何微）","6班":"陈丹云","7班":"陈曾怡","8班":"袁明婷","9班":"林雨昕（谢瑶）","10班":"林世华","11班":"卓杨晶","12班":"郑朝峰","13班":"卢瑾瑾","14班":"刘海霞"},"四年级":{"1班":"张樱","2班":"林志栗","3班":"陈小凤","4班":"林希光","5班":"吴比","6班":"陈建军","7班":"吴楠","8班":"郑志扬","9班":"瞿超域","10班":"林圣涛","11班":"翁理花","12班":"江伟铭","13班":"林鸿伟","14班":"高崴旻（邹建东）","15班":"陈思琳"},"五年级":{"1班":"林巧梅","2班":"赵彬","3班":"陈丰颖","4班":"黄瑶萍","5班":"林孟庭","6班":"林华","7班":"王嘉俊","8班":"陈亮","9班":"彭丽彬","10班":"罗英","11班":"周伟豪","12班":"陈冠中"},"六年级":{"1班":"郑伟","2班":"林敏敏","3班":"陈恺琪","4班":"吴昱立","5班":"周丽琴（郭建辉）","6班":"蒯梅钦","7班":"姚睿华","8班":"王晓珊","9班":"李秋云","10班":"陈新荷","11班":"黄荻欣","12班":"林莹"}},"星期五":{"一年级":{"1班":"刘洁玲","2班":"黄丽群","3班":"李惠娟","4班":"廖义皇","5班":"黄荻欣","6班":"郑阳","7班":"方游璘","8班":"柯晶蕾","9班":"黄美芳","10班":"陈诺","11班":"龚叶敏","12班":"陈怡星","13班":"林惠","14班":"廖淑艺","15班":"饶春燕","16班":"黄泠璇"},"二年级":{"1班":"姚丹","2班":"王梦琪","3班":"叶孝明","4班":"林翠","5班":"陈海欣","6班":"陈捷玲","7班":"吴含","8班":"黄铃航","9班":"兰丽婷","10班":"曾娴雅","11班":"林境秀（刘瑾）","12班":"杨薇薇","13班":"刘雪阳","14班":"马文钦"},"三年级":{"1班":"冯舒婷","2班":"陈雪芳","3班":"何新","4班":"林圣婕","5班":"陆舒敏（何微）","6班":"洪硕夫","7班":"陈郭杭","8班":"黄锦垣","9班":"刘心","10班":"林雨昕（谢瑶）","11班":"蒋小琴","12班":"张晓婷","13班":"卢瑾瑾","14班":"黄瑶萍"},"四年级":{"1班":"李海燕","2班":"陈仕意","3班":"陈建军","4班":"林希光","5班":"陈艳萍","6班":"赵凯恩","7班":"林志栗","8班":"许志勇","9班":"陈雨珂","10班":"林圣涛","11班":"尚春红","12班":"麦晓艳","13班":"陈娇","14班":"高崴旻（邹建东）","15班":"翁理花"},"五年级":{"1班":"赵彬","2班":"陈艳芳","3班":"林姗","4班":"郑晓辉","5班":"陈丰颖","6班":"刘凤琴","7班":"张静","8班":"许艺","9班":"唐文彬","10班":"林华","11班":"陈博文","12班":"林南希"},"六年级":{"1班":"郑伟","2班":"江芬","3班":"刘秀梅","4班":"陈恺琪","5班":"吴子孺","6班":"黄雨青","7班":"林龙杰","8班":"钟杨洁","9班":"张捷","10班":"宋晓岩（肖婷）","11班":"周丽琴（郭建辉）","12班":"吴楠"}}};
+
+const GRADES=["一年级","二年级","三年级","四年级","五年级","六年级"];
+const WDAYS=["星期一","星期二","星期三","星期四","星期五"];
+const PW="jsxxjdc";
+let backendUnlocked=false;
+
+// STATE
+let S={grade:'一年级',wdIdx:0,rec:{},fb:'',inspector:'',modal:null};
+
+function loadS(){try{const d=JSON.parse(localStorage.getItem('ps'));if(d){S.rec=d.rec||{};S.inspector=d.inspector||''}}catch(e){}}
+function saveS(){try{localStorage.setItem('ps',JSON.stringify({rec:S.rec,inspector:S.inspector}))}catch(e){}}
+function saveInsp(){S.inspector=$('inp-inspector').value;saveS()}
+function $(id){return document.getElementById(id)}
+function getDate(){return $('inp-date').value}
+function getWday(){return WDAYS[S.wdIdx]}
+
+// INIT
+function init(){
+  loadS();
+  const now=new Date();
+  $('inp-date').value=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
+  let di=now.getDay()-1;if(di<0||di>4)di=0;
+  S.wdIdx=di;$('inp-wday').value=di;
+  if(S.inspector)$('inp-inspector').value=S.inspector;
+  renderGTabs();renderGrid();updateProg();
+}
+
+function onDateChange(){
+  const d=new Date($('inp-date').value);if(isNaN(d))return;
+  let di=d.getDay()-1;if(di<0||di>4)di=0;
+  S.wdIdx=di;$('inp-wday').value=di;renderGrid();updateProg();
+}
+function onWdayChange(){S.wdIdx=+$('inp-wday').value;renderGrid();updateProg();}
+
+// GRADE TABS
+function renderGTabs(){$('gtabs').innerHTML=GRADES.map(g=>`<button class="gtab ${g===S.grade?'on':''}" onclick="pickGrade('${g}')">${g}</button>`).join('')}
+function pickGrade(g){S.grade=g;renderGTabs();renderGrid();updateProg();}
+
+// GRID
+function renderGrid(){
+  const g=$('cgrid'),w=getWday(),d=getDate(),gd=SCHEDULE[w]?.[S.grade]||{};
+  const cls=Object.keys(gd).sort((a,b)=>parseInt(a)-parseInt(b));
+  g.innerHTML=cls.map(c=>{
+    const k=`${d}_${S.grade}_${c}`,r=S.rec[k];
+    const tn=r?.display||gd[c];
+    let cls2='ccard',badge='';
+    if(r?.action==='praise'){cls2+=' praised';badge='<span class="tbadge p">表扬</span>';}
+    else if(r?.action==='need-attention'){cls2+=' attention';badge='<span class="tbadge n">关注</span>';}
+    else if(r?.action==='other'){cls2+=' othertag';badge='<span class="tbadge o">其他</span>';}
+    return `<div class="${cls2}">${badge}<div class="cnum">${c}</div><div class="tname" onclick="openModal('${S.grade}','${esc(c)}','${esc(gd[c])}')">${esc(tn)}</div></div>`;
+  }).join('');
+}
+function esc(s){return String(s).replace(/'/g,"\\'").replace(/"/g,'&quot;')}
+
+// PROGRESS
+function updateProg(){
+  const d=getDate(),w=getWday(),gd=SCHEDULE[w]?.[S.grade]||{};
+  const total=Object.keys(gd).length;
+  let done=0;
+  for(const c of Object.keys(gd)){if(S.rec[`${d}_${S.grade}_${c}`]?.action)done++;}
+  const pct=total?Math.round(done/total*100):0;
+  $('prog-fill').style.width=pct+'%';
+  $('prog-lbl').textContent=`${done} / ${total} 已检查`;
+}
+
+// MODAL
+function openModal(g,c,orig){
+  S.modal={grade:g,cls:c,orig};
+  const d=getDate(),k=`${d}_${g}_${c}`,r=S.rec[k];
+  $('m-title').textContent=`${c} · ${g}`;
+  $('m-sub').innerHTML=`当前教师：<b>${esc(r?.display||orig)}</b>`;
+  $('inp-rename').value=r?.display||orig;
+  $('inp-other').value='';
+  ['rename','other'].forEach(x=>toggleBox(x,false));
+  $('ov-modal').classList.add('on');
+}
+function closeModal(){$('ov-modal').classList.remove('on');S.modal=null;}
+function toggleBox(which,force){
+  const box=$('box-'+which),opts=$('m-opts');
+  const show=force!==undefined?force:box.style.display==='none';
+  box.style.display=show?'block':'none';
+  if(show)opts.style.display='none';else if(!$('box-rename').style.display||$('box-rename').style.display==='none'&&$('box-other').style.display==='none')opts.style.display='flex';
+  // Reset opts visibility
+  if(!show&&!($('box-rename').style.display==='block')&&!($('box-other').style.display==='block'))opts.style.display='flex';
+}
+function doRename(){
+  const v=$('inp-rename').value.trim();if(!v||!S.modal)return;
+  const d=getDate(),k=`${d}_${S.modal.grade}_${S.modal.cls}`;
+  if(!S.rec[k])S.rec[k]={};
+  S.rec[k].display=v;saveS();renderGrid();updateProg();
+  $('m-sub').innerHTML=`当前教师：<b>${esc(v)}</b>`;
+  toggleBox('rename',false);
+}
+function pickAction(action){
+  if(!S.modal)return;
+  const d=getDate(),insp=S.inspector||$('inp-inspector').value||'未填写';
+  const{grade,cls,orig}=S.modal,k=`${d}_${grade}_${cls}`;
+  let text='';
+  if(action==='other'){
+    text=$('inp-other').value.trim();
+    if(!text){$('inp-other').style.borderColor='var(--err)';return;}
+  }
+  const display=S.rec[k]?.display||orig;
+  S.rec[k]={action,text,orig,display,date:d,weekday:getWday(),grade,cls,inspector:insp,ts:new Date().toISOString()};
+  saveS();closeModal();renderGrid();updateProg();
+}
+
+// SUBMIT
+function doSubmit(){
+  // Check inspector name
+  const insp=S.inspector||$('inp-inspector').value.trim();
+  if(!insp){$('inp-inspector').classList.add('error');$('submit-hint').textContent='请填写检查人员姓名（必填）';$('submit-hint').style.color='var(--err)';return;}
+  $('inp-inspector').classList.remove('error');
+
+  const fb=$('inp-fb').value.trim();
+  if(!fb){$('inp-fb').classList.add('er');$('submit-hint').textContent='请填写巡课反馈问题（必填）';$('submit-hint').style.color='var(--err)';return;}
+  $('inp-fb').classList.remove('er');
+
+  const d=getDate(),sub={date:d,weekday:getWday(),inspector:insp,feedback:fb,ts:new Date().toISOString(),records:[]};
+  for(const[k,r]of Object.entries(S.rec)){if(r.date===d)sub.records.push(r);}
+
+  let subs=[];try{subs=JSON.parse(localStorage.getItem('pss')||'[]');}catch(e){}
+  subs.push(sub);localStorage.setItem('pss',JSON.stringify(subs));
+  // 提交后清除单次修改的名字，恢复总表原名
+  for(const[k,r]of Object.entries(S.rec)){if(r.date===d){delete r.display;}}
+  saveS();renderGrid();updateProg();
+  $('inp-fb').value='';$('submit-hint').textContent='提交成功！';$('submit-hint').style.color='var(--ok)';
+  setTimeout(()=>$('submit-hint').textContent='',3000);
+}
+document.addEventListener('DOMContentLoaded',()=>{$('inp-fb').addEventListener('focus',()=>$('inp-fb').classList.remove('er'));$('inp-inspector').addEventListener('focus',()=>$('inp-inspector').classList.remove('error'));});
+
+// PAGE SWITCH
+function switchPage(p){
+  document.querySelectorAll('.pg').forEach(e=>e.classList.remove('on'));
+  document.querySelectorAll('.nav-tab').forEach(e=>e.classList.remove('active'));
+  $('pg-'+p).classList.add('on');
+  document.querySelectorAll('.nav-tab')[p==='patrol'?0:1].classList.add('active');
+  if(p==='backend')renderBE();
+}
+
+// PASSWORD
+function tryBackend(){if(backendUnlocked){switchPage('backend');return;}$('ov-pw').classList.add('on');$('pw-input').value='';$('pw-err').style.display='none';$('pw-input').classList.remove('er');setTimeout(()=>$('pw-input').focus(),100);}
+function checkPW(){if($('pw-input').value===PW){backendUnlocked=true;closePW();switchPage('backend');}else{$('pw-input').classList.add('er');$('pw-err').style.display='block';}}
+function closePW(){$('ov-pw').classList.remove('on');}
+
+// PERMANENT EDIT
+function openPermEdit(){$('ov-perm').classList.add('on');loadPermClasses();}
+function closePermEdit(){$('ov-perm').classList.remove('on');}
+function loadPermClasses(){
+  const w=$('pe-wday').value,g=$('pe-grade').value;
+  const gd=SCHEDULE[w]?.[g]||{};
+  const sel=$('pe-class');
+  sel.innerHTML=Object.keys(gd).sort((a,b)=>parseInt(a)-parseInt(b)).map(c=>`<option value="${c}">${c}</option>`).join('');
+  loadPermTeacher();
+}
+function loadPermTeacher(){
+  const w=$('pe-wday').value,g=$('pe-grade').value,c=$('pe-class').value;
+  const t=SCHEDULE[w]?.[g]?.[c]||'';
+  $('pe-current').value=t;$('pe-new').value='';
+}
+function doPermEdit(){
+  const w=$('pe-wday').value,g=$('pe-grade'),c=$('pe-class').value;
+  const nw=$('pe-new').value.trim();
+  if(!nw){$('pe-new').style.borderColor='var(--err)';return;}
+  if(!SCHEDULE[w]||!SCHEDULE[w][g]||!SCHEDULE[w][g][c])return;
+  SCHEDULE[w][g][c]=nw;
+  // Update permanent storage
+  try{localStorage.setItem('perm_schedule',JSON.stringify(SCHEDULE));}catch(e){}
+  renderGrid();updateProg();
+  alert(`已永久修改：${w} ${g} ${c} → ${nw}`);
+  closePermEdit();
+}
+// Load permanent changes
+try{const ps=JSON.parse(localStorage.getItem('perm_schedule'));if(ps){Object.assign(SCHEDULE,ps);}}catch(e){}
+
+// ============================================================
+// BACKEND RENDERING
+// ============================================================
+function getFiltered(){
+  let subs=[];try{subs=JSON.parse(localStorage.getItem('pss')||'[]');}catch(e){}
+  const gf=$('st-grade').value,ds=$('st-ds').value,de=$('st-de').value;
+  let all=[];
+  for(const s of subs)for(const r of s.records){
+    let ok=true;
+    if(gf!=='all'&&r.grade!==gf)ok=false;
+    if(ds&&r.date<ds)ok=false;
+    if(de&&r.date>de)ok=false;
+    if(ok)all.push({...r,feedback:s.feedback});
+  }
+  return{subs,all};
+}
+
+function renderBE(){
+  const v=$('st-view').value,{subs,all}=getFiltered();
+  let h='';
+  if(!all.length&&v!=='overview')h='<div class="empty"><div class="ei">📊</div>暂无巡课数据，请先在巡课端完成检查并提交</div>';
+  else{
+    switch(v){
+      case'overview':h=rOverview(subs,all);break;
+      case'by-class':h=rByClass(all);break;
+      case'by-day':h=rByDay(subs,all);break;
+      case'by-week':h=rByWeek(subs,all);break;
+      case'by-teacher':h=rByTeacher(all);break;
+      case'issues':h=rIssues(subs,all);break;
+    }
+  }
+  $('be-body').innerHTML=h;
+}
+
+function rOverview(subs,all){
+  const pc=all.filter(r=>r.action==='praise').length;
+  const ac=all.filter(r=>r.action==='need-attention').length;
+  const oc=all.filter(r=>r.action==='other').length;
+  const ut=new Set(all.map(r=>r.display||r.orig)).size;
+  const ic=subs.filter(s=>s.feedback).length;
+  const today=new Date().toISOString().slice(0,10);
+  const td=all.filter(r=>r.date===today);
+
+  let h=`<div class="stats">
+    <div class="scard c-pri"><div class="num">${all.length}</div><div class="lbl">总检查次数</div></div>
+    <div class="scard c-ok"><div class="num">${pc}</div><div class="lbl">表扬次数</div></div>
+    <div class="scard c-warn"><div class="num">${ac}</div><div class="lbl">需关注次数</div></div>
+    <div class="scard c-cyan"><div class="num">${oc}</div><div class="lbl">其他备注</div></div>
+    <div class="scard c-err"><div class="num">${ic}</div><div class="lbl">反馈问题数</div></div>
+    <div class="scard c-pri"><div class="num">${ut}</div><div class="lbl">涉及教师</div></div>
+  </div>
+  <div class="charts">
+    <div class="cbox"><h4>今日检查 (${today})</h4>`;
+  if(!td.length)h+='<div class="empty" style="padding:20px">今日暂无数据</div>';
+  else{
+    const gs=[...new Set(td.map(r=>r.grade))];
+    for(const g of gs){
+      const gr=td.filter(r=>r.grade===g),p=gr.filter(r=>r.action==='praise').length,n=gr.filter(r=>r.action==='need-attention').length,o=gr.filter(r=>r.action==='other').length,t=gr.length;
+      h+=`<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--g600)">${g} <span style="color:var(--g400);font-weight:400">共${t}班</span></div>`;
+      if(p)h+=brow('表扬',p,t,'praise');
+      if(n)h+=brow('需关注',n,t,'atten');
+      if(o)h+=brow('其他',o,t,'other');
+      h+=`</div>`;
+    }
+  }
+  h+=`</div><div class="cbox"><h4>各年级检查汇总</h4>`;
+  const gs=[...new Set(all.map(r=>r.grade))];
+  const mx=Math.max(...gs.map(g=>all.filter(r=>r.grade===g).length),1);
+  for(const g of gs){const c=all.filter(r=>r.grade===g).length;const p=all.filter(r=>r.grade===g&&r.action==='praise').length;h+=brow(g,c,mx,'praise',`${c}次 (${p}表扬)`);}
+  h+=`</div></div>`;
+  h+=`<div class="sec"><h3><span class="dot"></span>最近提交记录</h3>`;
+  if(!subs.length)h+='<div class="empty" style="padding:20px">暂无提交记录</div>';
+  else{
+    h+=`<table class="dt"><thead><tr><th>日期</th><th>星期</th><th>检查人员</th><th>检查班数</th><th>反馈</th></tr></thead><tbody>`;
+    for(const s of subs.slice().reverse().slice(0,10))h+=`<tr><td>${s.date}</td><td>${s.weekday}</td><td>${s.inspector}</td><td>${s.records.length}</td><td style="max-width:300px;word-break:break-all">${s.feedback}</td></tr>`;
+    h+=`</tbody></table>`;
+  }
+  h+=`</div>`;
+  return h;
+}
+
+function brow(label,val,max,type,labelText){
+  const pct=val/max*100;
+  const cls=type==='praise'?'bi-praise':type==='atten'?'bi-atten':'bi-other';
+  return `<div class="brow"><div class="bl">${label}</div><div class="bt"><div class="bi ${cls}" style="width:${Math.max(pct,5)}%">${labelText||''}</div></div><div class="bc">${val}</div></div>`;
+}
+
+function rByClass(all){
+  const gm={};
+  for(const r of all){const k=`${r.grade} ${r.cls}`;if(!gm[k])gm[k]={p:0,n:0,o:0};if(r.action==='praise')gm[k].p++;else if(r.action==='need-attention')gm[k].n++;else gm[k].o++;}
+  const keys=Object.keys(gm).sort();
+  let h=`<div class="sec"><h3><span class="dot"></span>按班级统计</h3><table class="dt"><thead><tr><th>班级</th><th>表扬</th><th>需关注</th><th>其他</th><th>总计</th></tr></thead><tbody>`;
+  for(const k of keys){const g=gm[k],t=g.p+g.n+g.o;h+=`<tr><td><strong>${k}</strong></td><td><span class="bdg g">${g.p}</span></td><td><span class="bdg y">${g.n}</span></td><td><span class="bdg b">${g.o}</span></td><td>${t}</td></tr>`;}
+  h+=`</tbody></table></div>`;
+  // stacked bar
+  if(keys.length){
+    h+=`<div class="sec"><h3><span class="dot"></span>班级分布</h3><div class="cbox">`;
+    for(const k of keys){const g=gm[k],t=g.p+g.n+g.o;
+      h+=`<div style="margin-bottom:12px"><div style="font-size:13px;font-weight:700;margin-bottom:4px;color:var(--g600)">${k} <span style="color:var(--g400);font-weight:400">${t}次</span></div><div style="display:flex;height:22px;border-radius:6px;overflow:hidden;background:var(--g200)">`;
+      if(g.p)h+=`<div style="width:${g.p/t*100}%;background:var(--ok)"></div>`;
+      if(g.n)h+=`<div style="width:${g.n/t*100}%;background:var(--warn)"></div>`;
+      if(g.o)h+=`<div style="width:${g.o/t*100}%;background:var(--cyan)"></div>`;
+      h+=`</div></div>`;
+    }
+    h+=`<div style="display:flex;gap:16px;margin-top:8px;font-size:12px;color:var(--g400)"><span>🟢 表扬</span><span>🟡 需关注</span><span>🔵 其他</span></div></div></div>`;
+  }
+  return h;
+}
+
+function rByDay(subs,all){
+  const dm={};
+  for(const s of subs){const d=s.date;if(!dm[d])dm[d]={weekday:s.weekday,inspector:s.inspector,rec:[],fb:s.feedback};dm[d].rec.push(...s.records);}
+  const dates=Object.keys(dm).sort().reverse();
+  let h=`<div class="sec"><h3><span class="dot"></span>按日期统计</h3>`;
+  if(!dates.length)h+='<div class="empty" style="padding:20px">暂无数据</div>';
+  else{
+    h+=`<table class="dt"><thead><tr><th>日期</th><th>星期</th><th>检查人员</th><th>班数</th><th>表扬</th><th>关注</th><th>其他</th><th>反馈</th></tr></thead><tbody>`;
+    for(const d of dates){const dy=dm[d],p=dy.rec.filter(r=>r.action==='praise').length,n=dy.rec.filter(r=>r.action==='need-attention').length,o=dy.rec.filter(r=>r.action==='other').length;
+      h+=`<tr><td><strong>${d}</strong></td><td>${dy.weekday}</td><td>${dy.inspector}</td><td>${dy.rec.length}</td><td><span class="bdg g">${p}</span></td><td><span class="bdg y">${n}</span></td><td><span class="bdg b">${o}</span></td><td style="max-width:200px;word-break:break-all;font-size:12px">${dy.fb||'-'}</td></tr>`;}
+    h+=`</tbody></table>`;
+  }
+  h+=`</div>`;return h;
+}
+
+function rByWeek(subs,all){
+  const wm={};
+  for(const r of all){const d=new Date(r.date),ys=new Date(d.getFullYear(),0,1),wk=Math.ceil(((d-ys)/864e5+ys.getDay()+1)/7),k=`${d.getFullYear()}-W${String(wk).padStart(2,'0')}`;if(!wm[k])wm[k]=[];wm[k].push(r);}
+  const weeks=Object.keys(wm).sort().reverse();
+  let h=`<div class="sec"><h3><span class="dot"></span>按周统计</h3>`;
+  if(!weeks.length)h+='<div class="empty" style="padding:20px">暂无数据</div>';
+  else{
+    h+=`<table class="dt"><thead><tr><th>周次</th><th>天数</th><th>班数</th><th>表扬</th><th>关注</th><th>其他</th></tr></thead><tbody>`;
+    for(const w of weeks){const rs=wm[w],ud=new Set(rs.map(r=>r.date)).size,p=rs.filter(r=>r.action==='praise').length,n=rs.filter(r=>r.action==='need-attention').length,o=rs.filter(r=>r.action==='other').length;
+      h+=`<tr><td><strong>${w}</strong></td><td>${ud}</td><td>${rs.length}</td><td><span class="bdg g">${p}</span></td><td><span class="bdg y">${n}</span></td><td><span class="bdg b">${o}</span></td></tr>`;}
+    h+=`</tbody></table>`;
+  }
+  h+=`</div>`;return h;
+}
+
+function rByTeacher(all){
+  const tm={};
+  for(const r of all){const n=r.display||r.orig;if(!tm[n])tm[n]={p:0,n:0,o:0,grade:r.grade};if(r.action==='praise')tm[n].p++;else if(r.action==='need-attention')tm[n].n++;else tm[n].o++;}
+  const ts=Object.entries(tm).map(([name,d])=>({name,...d,t:d.p+d.n+d.o})).sort((a,b)=>b.p-a.p||a.n-b.n);
+  let h=`<div class="sec"><h3><span class="dot"></span>教师表扬排行</h3>`;
+  if(!ts.length)h+='<div class="empty" style="padding:20px">暂无数据</div>';
+  else{
+    const mx=Math.max(...ts.map(t=>t.p),1);
+    h+=`<div class="cbox">`;
+    for(let i=0;i<Math.min(ts.length,30);i++){const t=ts[i];h+=brow(t.name,t.p,mx,'praise');}
+    h+=`</div><table class="dt" style="margin-top:16px"><thead><tr><th>#</th><th>教师</th><th>年级</th><th>表扬</th><th>关注</th><th>其他</th></tr></thead><tbody>`;
+    for(let i=0;i<ts.length;i++){const t=ts[i];h+=`<tr><td>${i+1}</td><td><strong>${t.name}</strong></td><td>${t.grade}</td><td><span class="bdg g">${t.p}</span></td><td><span class="bdg y">${t.n}</span></td><td><span class="bdg b">${t.o}</span></td></tr>`;}
+    h+=`</tbody></table>`;
+  }
+  h+=`</div>`;return h;
+}
+
+function rIssues(subs,all){
+  let h=`<div class="sec"><h3><span class="dot"></span>巡课反馈汇总</h3>`;
+  const fs=subs.filter(s=>s.feedback);
+  if(!fs.length)h+='<div class="empty" style="padding:20px">暂无反馈问题</div>';
+  else{h+=`<ul class="issues">`;for(const s of fs.slice().reverse())h+=`<li><span class="im">${s.date} ${s.weekday}</span><span class="bdg gray">${s.inspector}</span><span class="it">${s.feedback}</span></li>`;h+=`</ul>`;}
+  const att=all.filter(r=>r.action==='need-attention');
+  if(att.length){h+=`<h3 style="margin-top:20px"><span class="dot" style="background:var(--warn)"></span>需关注教师明细</h3><table class="dt"><thead><tr><th>日期</th><th>班级</th><th>教师</th><th>备注</th></tr></thead><tbody>`;
+    for(const r of att)h+=`<tr><td>${r.date}</td><td>${r.grade} ${r.cls}</td><td><strong>${r.display||r.orig}</strong></td><td>${r.text||'-'}</td></tr>`;
+    h+=`</tbody></table>`;}
+  h+=`</div>`;return h;
+}
+
+// ============================================================
+// EXCEL EXPORT
+// ============================================================
+function exportExcel(){
+  const{subs,all}=getFiltered();
+  if(!all.length){alert('暂无数据可导出');return;}
+
+  const wb=XLSX.utils.book_new();
+
+  // Sheet 1: 巡课明细
+  const detailData=all.map(r=>({
+    '日期':r.date,'星期':r.weekday,'年级':r.grade,'班级':r.cls,
+    '教师(原)':r.orig,'教师(显示)':r.display||r.orig,
+    '评价':r.action==='praise'?'表扬':r.action==='need-attention'?'需要关注':'其他',
+    '备注':r.text||'','检查人员':r.inspector
+  }));
+  const ws1=XLSX.utils.json_to_sheet(detailData);
+  ws1['!cols']=[{wch:12},{wch:8},{wch:8},{wch:8},{wch:12},{wch:12},{wch:10},{wch:20},{wch:10}];
+  XLSX.utils.book_append_sheet(wb,ws1,'巡课明细');
+
+  // Sheet 2: 按班级统计
+  const gm={};
+  for(const r of all){const k=`${r.grade} ${r.cls}`;if(!gm[k])gm[k]={p:0,n:0,o:0};if(r.action==='praise')gm[k].p++;else if(r.action==='need-attention')gm[k].n++;else gm[k].o++;}
+  const classData=Object.entries(gm).sort().map(([k,v])=>({'班级':k,'表扬':v.p,'需关注':v.n,'其他':v.o,'总计':v.p+v.n+v.o}));
+  const ws2=XLSX.utils.json_to_sheet(classData);
+  XLSX.utils.book_append_sheet(wb,ws2,'按班级统计');
+
+  // Sheet 3: 教师表扬排行
+  const tm={};
+  for(const r of all){const n=r.display||r.orig;if(!tm[n])tm[n]={p:0,n:0,o:0,grade:r.grade};if(r.action==='praise')tm[n].p++;else if(r.action==='need-attention')tm[n].n++;else tm[n].o++;}
+  const teacherData=Object.entries(tm).map(([name,v])=>({'教师':name,'年级':v.grade,'表扬':v.p,'需关注':v.n,'其他':v.o,'总计':v.p+v.n+v.o})).sort((a,b)=>b.表扬-a.表扬);
+  const ws3=XLSX.utils.json_to_sheet(teacherData);
+  XLSX.utils.book_append_sheet(wb,ws3,'教师表扬排行');
+
+  // Sheet 4: 提交记录
+  const subData=subs.map(s=>({'日期':s.date,'星期':s.weekday,'检查人员':s.inspector,'检查班数':s.records.length,'反馈':s.feedback}));
+  const ws4=XLSX.utils.json_to_sheet(subData);
+  XLSX.utils.book_append_sheet(wb,ws4,'提交记录');
+
+  // Sheet 5: 问题汇总
+  const issueData=[];
+  for(const s of subs.filter(s=>s.feedback)){
+    issueData.push({'日期':s.date,'星期':s.weekday,'检查人员':s.inspector,'反馈问题':s.feedback});
+  }
+  for(const r of all.filter(r=>r.action==='need-attention')){
+    issueData.push({'日期':r.date,'星期':r.weekday,'班级':`${r.grade} ${r.cls}`,'教师':r.display||r.orig,'备注':r.text||''});
+  }
+  if(issueData.length){
+    const ws5=XLSX.utils.json_to_sheet(issueData);
+    XLSX.utils.book_append_sheet(wb,ws5,'问题汇总');
+  }
+
+  const today=new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb,`福州金山小学_早读巡课记录_${today}.xlsx`);
+}
+
+// ============================================================
+// DATA IMPORT/EXPORT
+// ============================================================
+function exportData(){
+  const data={
+    version:1,
+    exportTime:new Date().toISOString(),
+    submissions:JSON.parse(localStorage.getItem('pss')||'[]'),
+    schedule:JSON.parse(localStorage.getItem('perm_schedule')||'null'),
+    state:{rec:S.rec,inspector:S.inspector}
+  };
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`巡课数据备份_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();URL.revokeObjectURL(a.href);
+}
+
+function importData(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      const data=JSON.parse(ev.target.result);
+      if(!data.version){alert('数据格式不正确');return;}
+      if(!confirm('导入将覆盖当前所有数据，是否继续？'))return;
+      if(data.submissions)localStorage.setItem('pss',JSON.stringify(data.submissions));
+      if(data.schedule)localStorage.setItem('perm_schedule',JSON.stringify(data.schedule));
+      if(data.state){
+        S.rec=data.state.rec||{};
+        S.inspector=data.state.inspector||'';
+        saveS();
+      }
+      alert('数据导入成功！');
+      location.reload();
+    }catch(err){alert('导入失败：文件格式错误');}
+  };
+  reader.readAsText(file);
+  e.target.value='';
+}
+
+init();
+</script>
+</body>
+</html>
