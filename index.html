@@ -341,9 +341,9 @@
   </div>
 </div>
 
-<!-- ===== CLOUD SYNC MODAL (LeanCloud) ===== -->
+<!-- ===== CLOUD SYNC MODAL (GitHub) ===== -->
 <div class="overlay" id="ov-cloud">
-  <div class="modal" style="max-width:540px">
+  <div class="modal" style="max-width:560px">
     <div class="modal-head">
       <h3>云端同步配置</h3>
       <button class="close" onclick="closeCloud()">&times;</button>
@@ -351,17 +351,16 @@
     <div class="modal-body">
       <div id="cloud-status-box" style="padding:12px 16px;border-radius:var(--r-sm);margin-bottom:16px;font-size:13px;font-weight:600"></div>
       <div style="background:var(--g50);border-radius:var(--r);padding:14px;margin-bottom:16px;font-size:12px;color:var(--g600);line-height:1.9">
-        <b>免费开通步骤（国内可直接访问，无需翻墙）：</b><br>
-        1. 浏览器打开 <a href="https://www.leancloud.cn/" target="_blank" style="color:var(--pri);font-weight:600">leancloud.cn</a>，用手机号注册登录<br>
-        2. 点击「创建应用」（选择「开发版」，免费），区域选<b>华东</b>或<b>华北</b><br>
-        3. 进入应用 → 左下「设置」→「应用凭证」<br>
-        4. 复制 <b>AppID</b>、<b>AppKey</b> 和 <b>服务器地址(Server URL)</b>（形如 https://xxxx.api.lncldglobal.com），粘贴到下方<br>
-        5. 点击「保存并连接」即可，无需任何代码<br>
-        <span style="color:var(--g400)">提示：换设备后，在新设备的云端同步里填入同样的4项信息即可共享数据</span>
+        <b>使用方法（管理员配置一次，各设备填入相同信息即可共享数据）：</b><br>
+        1. 数据存放在您的 GitHub <b>私有仓库</b>（jsxxjdc/patrol-data），仅管理员可见<br>
+        2. 在下方填入：仓库所有者、仓库名、访问令牌<br>
+        3. 访问令牌在 GitHub 的「Settings → Developer settings → Fine-grained tokens」中创建，权限只需 <b>Contents: Read and write</b>，仅选择 patrol-data 仓库<br>
+        4. 换设备时，在新设备的云端同步里填入同样三项信息即可<br>
+        <span style="color:var(--warn)">提示：令牌有有效期，到期前请在 GitHub 上重新生成并更新（可联系维护人员）</span>
       </div>
-      <div class="field" style="margin-bottom:10px"><label>AppID</label><input type="text" id="cloud-pid" placeholder="LeanCloud 应用的 AppID"></div>
-      <div class="field" style="margin-bottom:10px"><label>AppKey</label><input type="text" id="cloud-key" placeholder="LeanCloud 应用的 AppKey"></div>
-      <div class="field" style="margin-bottom:10px"><label>服务器地址 Server URL</label><input type="text" id="cloud-db" placeholder="https://xxxx.api.lncldglobal.com"></div>
+      <div class="field" style="margin-bottom:10px"><label>仓库所有者</label><input type="text" id="cloud-owner" placeholder="GitHub用户名，如 jsxxjdc"></div>
+      <div class="field" style="margin-bottom:10px"><label>仓库名</label><input type="text" id="cloud-repo" placeholder="如 patrol-data"></div>
+      <div class="field" style="margin-bottom:10px"><label>访问令牌 Token</label><input type="password" id="cloud-token" placeholder="github_pat_..."></div>
       <div style="display:flex;gap:8px;margin-top:14px">
         <button class="btn btn-pri" style="flex:1" onclick="saveCloudConfig()">保存并连接</button>
         <button class="btn btn-ghost" style="flex:0" onclick="disconnectCloud()">断开云端</button>
@@ -402,7 +401,7 @@ function init(){
   if(S.inspector)$('inp-inspector').value=S.inspector;
   renderGTabs();renderGrid();updateProg();
   // 已配置云端时自动拉取最新数据
-  if(lcInit())pullFromCloud();
+  if(ghInit())pullFromCloud();
 }
 
 function onDateChange(){
@@ -557,68 +556,79 @@ function doPermEdit(){
 try{const ps=JSON.parse(localStorage.getItem('perm_schedule'));if(ps){Object.assign(SCHEDULE,ps);}}catch(e){}
 
 // ============================================================
-// CLOUD SYNC (LeanCloud 国内版)
+// CLOUD SYNC (GitHub API)
 // ============================================================
-let lcCfg=null, cloudConnected=false;
+let ghCfg=null, cloudConnected=false, cloudChecking=false;
 
 function loadCloudConfig(){
-  try{const c=JSON.parse(localStorage.getItem('lc_cfg'));if(c&&c.appId&&c.appKey&&c.server){return c;}}catch(e){}
+  try{const c=JSON.parse(localStorage.getItem('gh_cfg'));if(c&&c.owner&&c.repo&&c.token){return c;}}catch(e){}
   return null;
 }
 
-function lcInit(){
-  lcCfg=loadCloudConfig();
-  cloudConnected=!!lcCfg;
+function ghInit(){
+  ghCfg=loadCloudConfig();
+  cloudConnected=!!ghCfg;
   return cloudConnected;
 }
 
-async function lcApi(method,path,body){
-  const c=lcCfg;
-  if(!c)throw new Error('LeanCloud 未配置');
-  const res=await fetch(c.server.replace(/\/+$/,'')+'/1.1/'+path,{
+async function ghApi(method,path,body){
+  const c=ghCfg;
+  if(!c)throw new Error('未配置云端');
+  const res=await fetch('https://api.github.com'+path,{
     method,
-    headers:{'X-LC-Id':c.appId,'X-LC-Key':c.appKey,'Content-Type':'application/json'},
+    headers:{'Authorization':'Bearer '+c.token,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},
     body:body?JSON.stringify(body):undefined
   });
-  if(!res.ok)throw new Error('LeanCloud API 错误: HTTP '+res.status+' '+(await res.text()).slice(0,200));
+  if(!res.ok)throw new Error('GitHub API 错误: HTTP '+res.status);
   return res.json();
 }
 
-async function lcFind(key){
-  const data=await lcApi('GET','classes/CloudPatrolData?limit=10&where='+encodeURIComponent(JSON.stringify({key})));
-  return (data.results&&data.results[0])||null;
+const GH_FILE='data.json';
+
+async function ghReadFile(){
+  const data=await ghApi('GET','/repos/'+ghCfg.owner+'/'+ghCfg.repo+'/contents/'+GH_FILE);
+  if(!data||!data.content)return null;
+  try{return JSON.parse(atob(data.content.replace(/\n/g,'')));}catch(e){return null;}
 }
 
-async function lcPush(key,obj){
-  const rec=await lcFind(key);
-  const body={key,payload:JSON.stringify(obj)};
-  if(rec)await lcApi('PUT','classes/CloudPatrolData/'+rec.objectId,body);
-  else await lcApi('POST','classes/CloudPatrolData',body);
-}
-
-async function lcPull(key){
-  const rec=await lcFind(key);
-  if(!rec||!rec.payload)return null;
-  try{return JSON.parse(rec.payload);}catch(e){return null;}
+async function ghWriteFile(content){
+  const payload={message:'早读巡课数据同步 '+new Date().toLocaleString('zh-CN'),content:btoa(unescape(encodeURIComponent(JSON.stringify(content))))};
+  try{
+    // 获取当前 sha
+    const data=await ghApi('GET','/repos/'+ghCfg.owner+'/'+ghCfg.repo+'/contents/'+GH_FILE);
+    if(data&&data.sha)payload.sha=data.sha;
+  }catch(e){}
+  await ghApi('PUT','/repos/'+ghCfg.owner+'/'+ghCfg.repo+'/contents/'+GH_FILE,payload);
 }
 
 async function pushToCloud(){
-  if(!lcInit())return;
+  if(!ghInit())return;
   try{
-    await lcPush('submissions',JSON.parse(localStorage.getItem('pss')||'[]'));
-    const ps=localStorage.getItem('perm_schedule');
-    if(ps)await lcPush('perm_schedule',JSON.parse(ps));
-    console.log('云端上传成功');
+    const subs=JSON.parse(localStorage.getItem('pss')||'[]');
+    const psStr=localStorage.getItem('perm_schedule');
+    const perm=psStr?JSON.parse(psStr):null;
+    // 先读云端已有数据，合并（防止覆盖他人刚提交的数据）
+    let cloud=null;
+    try{cloud=await ghReadFile();}catch(e){}
+    const base=cloud&&cloud.submissions?cloud:null;
+    const cloudSubs=base?base.submissions:[];
+    const merged=cloudSubs.slice();
+    // 将本地每条已提交记录合并（按 ts+date+grade+cls 去重）
+    const seen=new Set(merged.map(s=>s.ts||(s.date+s.records.length)));
+    for(const s of subs){const k=s.ts;if(!seen.has(k)){merged.push(s);seen.add(k);}}
+    await ghWriteFile({submissions:merged,perm_schedule:perm,updatedAt:new Date().toISOString()});
+    localStorage.setItem('pss',JSON.stringify(merged));
+    console.log('云端上传成功，共 '+merged.length+' 条提交');
   }catch(e){console.error('云端上传失败:',e);}
 }
 
 async function pullFromCloud(){
-  if(!lcInit())return;
+  if(!ghInit())return;
   try{
-    const subs=await lcPull('submissions');
-    if(subs){localStorage.setItem('pss',JSON.stringify(subs));}
-    const ps=await lcPull('perm_schedule');
-    if(ps){Object.assign(SCHEDULE,ps);try{localStorage.setItem('perm_schedule',JSON.stringify(ps));}catch(e){}}
+    const data=await ghReadFile();
+    if(!data)return;
+    if(data.submissions){localStorage.setItem('pss',JSON.stringify(data.submissions));}
+    if(data.perm_schedule){Object.assign(SCHEDULE,data.perm_schedule);try{localStorage.setItem('perm_schedule',JSON.stringify(data.perm_schedule));}catch(e){}}
     if($('pg-backend').classList.contains('on'))renderBE();
     renderGrid();updateProg();
     console.log('云端下载成功');
@@ -629,11 +639,11 @@ function openCloud(){
   $('ov-cloud').classList.add('on');
   const cfg=loadCloudConfig();
   if(cfg){
-    $('cloud-pid').value=cfg.appId||'';
-    $('cloud-key').value=cfg.appKey||'';
-    $('cloud-db').value=cfg.server||'';
+    $('cloud-owner').value=cfg.owner||'';
+    $('cloud-repo').value=cfg.repo||'';
+    $('cloud-token').value=cfg.token||'';
   }else{
-    $('cloud-pid').value='';$('cloud-key').value='';$('cloud-db').value='';
+    $('cloud-owner').value='';$('cloud-repo').value='';$('cloud-token').value='';
   }
   updateCloudStatus();
 }
@@ -646,32 +656,57 @@ function updateCloudStatus(){
     box.innerHTML='✅ 已连接云端 — 所有设备共享同一份数据，提交后自动同步';
   }else{
     box.style.background='var(--warn-bg)';box.style.color='var(--warn)';
-    box.innerHTML='⚠️ 未连接云端 — 数据仅存储在当前浏览器，换设备需要重新配置云端';
+    box.innerHTML='⚠️ 未连接云端 — 数据仅存储在当前浏览器';
   }
 }
 
 function saveCloudConfig(){
-  const appId=$('cloud-pid').value.trim(),appKey=$('cloud-key').value.trim();
-  const server=$('cloud-db').value.trim();
-  if(!appId||!appKey||!server){alert('请填写完整的 AppID、AppKey 和服务器地址');return;}
-  if(!/^https?:\/\//.test(server)){alert('服务器地址需以 https:// 开头，请检查');return;}
-  localStorage.setItem('lc_cfg',JSON.stringify({appId,appKey,server}));
-  lcInit();
+  const owner=$('cloud-owner').value.trim(),repo=$('cloud-repo').value.trim();
+  const token=$('cloud-token').value.trim();
+  if(!owner||!repo||!token){alert('请填写仓库所有者、仓库名和访问令牌');return;}
+  localStorage.setItem('gh_cfg',JSON.stringify({owner,repo,token}));
+  ghInit();
+  updateCloudStatus();
   alert('配置已保存！正在同步云端数据...');
   closeCloud();
   pullFromCloud().then(()=>{alert('云端数据已同步完成！');location.reload();})
-    .catch(()=>{alert('同步失败：请检查 AppID/AppKey/服务器地址是否正确，且已创建「开发版」应用。');});
+    .catch(()=>{alert('同步失败：请检查所有者/仓库名/令牌是否正确，令牌是否有 Contents 读写权限。');});
 }
 
 function disconnectCloud(){
   if(!confirm('断开云端后数据将不再同步，是否继续？'))return;
-  localStorage.removeItem('lc_cfg');
-  lcCfg=null;cloudConnected=false;
+  localStorage.removeItem('gh_cfg');
+  ghCfg=null;cloudConnected=false;
   updateCloudStatus();alert('已断开云端连接');
 }
 
+// 支持 URL 参数 ?cfg=<base64JSON> 一键自动配置（用于快速在其它设备部署配置）
+function autoConfigFromURL(){
+  try{
+    const params=new URLSearchParams(location.search);
+    const cfg=params.get('cfg');
+    if(!cfg)return false;
+    const decoded=JSON.parse(decodeURIComponent(atob(cfg)));
+    if(decoded&&decoded.owner&&decoded.repo&&decoded.token){
+      localStorage.setItem('gh_cfg',JSON.stringify({owner:decoded.owner,repo:decoded.repo,token:decoded.token}));
+      // 移除 URL 中的配置参数，避免令牌留在地址栏
+      history.replaceState(null,'',location.pathname);
+      return true;
+    }
+  }catch(e){}
+  return false;
+}
+
 // Auto connect on load
-try{lcInit();}catch(e){}
+try{
+  const applied=autoConfigFromURL();
+  ghInit();
+  if(cloudConnected){
+    // 延迟到页面就绪后拉取云端数据
+    setTimeout(()=>{pullFromCloud();},800);
+    if(applied)setTimeout(()=>{alert('云端配置成功！数据已从云端同步。');},2500);
+  }
+}catch(e){}
 
 // ============================================================
 // BACKEND RENDERING
