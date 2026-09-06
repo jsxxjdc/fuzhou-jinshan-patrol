@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://static.cloudbase.net/cloudbase-js-sdk/1.7.2/cloudbase.full.js"></script>
 <style>
   :root {
     --pri: #4f46e5; --pri-l: #818cf8; --pri-d: #3730a3; --pri-bg: #eef2ff;
@@ -341,29 +342,22 @@
   </div>
 </div>
 
-<!-- ===== CLOUD SYNC MODAL (GitHub) ===== -->
+<!-- ===== CLOUD SYNC MODAL (腾讯云) ===== -->
 <div class="overlay" id="ov-cloud">
-  <div class="modal" style="max-width:560px">
+  <div class="modal" style="max-width:540px">
     <div class="modal-head">
-      <h3>云端同步配置</h3>
+      <h3>云端同步</h3>
       <button class="close" onclick="closeCloud()">&times;</button>
     </div>
     <div class="modal-body">
       <div id="cloud-status-box" style="padding:12px 16px;border-radius:var(--r-sm);margin-bottom:16px;font-size:13px;font-weight:600"></div>
-      <div style="background:var(--g50);border-radius:var(--r);padding:14px;margin-bottom:16px;font-size:12px;color:var(--g600);line-height:1.9">
-        <b>使用方法（管理员配置一次，各设备填入相同信息即可共享数据）：</b><br>
-        1. 数据存放在您的 GitHub <b>私有仓库</b>（jsxxjdc/patrol-data），仅管理员可见<br>
-        2. 在下方填入：仓库所有者、仓库名、访问令牌<br>
-        3. 访问令牌在 GitHub 的「Settings → Developer settings → Fine-grained tokens」中创建，权限只需 <b>Contents: Read and write</b>，仅选择 patrol-data 仓库<br>
-        4. 换设备时，在新设备的云端同步里填入同样三项信息即可<br>
-        <span style="color:var(--warn)">提示：令牌有有效期，到期前请在 GitHub 上重新生成并更新（可联系维护人员）</span>
+      <div style="background:var(--ok-bg);border-radius:var(--r);padding:14px;margin-bottom:16px;font-size:12px;color:var(--g600);line-height:1.9">
+        <b style="color:var(--ok)">✅ 腾讯云免配置模式 — 老师打开网页即自动连接，无需任何设置</b><br>
+        数据存储在您腾讯云账号的 CloudBase 环境（cloud1），所有老师的巡课提交自动汇总，您在后台即可查看全部数据。<br>
+        <span style="color:var(--g400)">本页面无需任何手动配置；若连接状态异常，请确认腾讯云服务套餐未到期。</span>
       </div>
-      <div class="field" style="margin-bottom:10px"><label>仓库所有者</label><input type="text" id="cloud-owner" placeholder="GitHub用户名，如 jsxxjdc"></div>
-      <div class="field" style="margin-bottom:10px"><label>仓库名</label><input type="text" id="cloud-repo" placeholder="如 patrol-data"></div>
-      <div class="field" style="margin-bottom:10px"><label>访问令牌 Token</label><input type="password" id="cloud-token" placeholder="github_pat_..."></div>
       <div style="display:flex;gap:8px;margin-top:14px">
-        <button class="btn btn-pri" style="flex:1" onclick="saveCloudConfig()">保存并连接</button>
-        <button class="btn btn-ghost" style="flex:0" onclick="disconnectCloud()">断开云端</button>
+        <button class="btn btn-pri" style="flex:1" onclick="saveCloudConfig()">立即同步</button>
         <button class="btn btn-ghost" style="flex:0" onclick="closeCloud()">关闭</button>
       </div>
     </div>
@@ -400,8 +394,7 @@ function init(){
   S.wdIdx=di;$('inp-wday').value=di;
   if(S.inspector)$('inp-inspector').value=S.inspector;
   renderGTabs();renderGrid();updateProg();
-  // 已配置云端时自动拉取最新数据
-  if(ghInit())pullFromCloud();
+  // 腾讯云免配置：自动连接并拉取云端（已在脚本末尾触发，这里兜底）
 }
 
 function onDateChange(){
@@ -556,95 +549,86 @@ function doPermEdit(){
 try{const ps=JSON.parse(localStorage.getItem('perm_schedule'));if(ps){Object.assign(SCHEDULE,ps);}}catch(e){}
 
 // ============================================================
-// CLOUD SYNC (GitHub API)
+// CLOUD SYNC (腾讯云 CloudBase 免配置)
 // ============================================================
-let ghCfg=null, cloudConnected=false, cloudChecking=false;
+const ENV_ID='cloud1-1gwx7o15f754ab18';
+const COLL='patrol_data';
+let cApp=null, cloudConnected=false, cAuthUid=null, authReady=null;
 
-function loadCloudConfig(){
-  try{const c=JSON.parse(localStorage.getItem('gh_cfg'));if(c&&c.owner&&c.repo&&c.token){return c;}}catch(e){}
-  return null;
+async function ensureCloud(){
+  if(authReady)return authReady;
+  authReady=(async()=>{
+    if(typeof cloudbase==='undefined')throw new Error('cloudbase sdk 未加载');
+    if(!cApp)cApp=cloudbase.init({env:ENV_ID});
+    const auth=cApp.auth({persistence:'local'});
+    const state=await auth.anonymousAuthProvider().signIn();
+    const user=state&&state.user?state.user:(auth.currentUser||null);
+    if(!user)throw new Error('匿名登录失败');
+    cAuthUid=user.uid;
+    cloudConnected=true;
+    console.log('CloudBase 已连接 uid='+cAuthUid);
+    return cApp;
+  })().catch(e=>{console.error('CloudBase 连接失败:',e);cloudConnected=false;authReady=null;throw e;});
+  return authReady;
 }
 
-function ghInit(){
-  ghCfg=loadCloudConfig();
-  cloudConnected=!!ghCfg;
-  return cloudConnected;
+async function cdb(){
+  const app=await ensureCloud();
+  return app.database();
 }
 
-async function ghApi(method,path,body){
-  const c=ghCfg;
-  if(!c)throw new Error('未配置云端');
-  const res=await fetch('https://api.github.com'+path,{
-    method,
-    headers:{'Authorization':'Bearer '+c.token,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},
-    body:body?JSON.stringify(body):undefined
-  });
-  if(!res.ok)throw new Error('GitHub API 错误: HTTP '+res.status);
-  return res.json();
-}
-
-const GH_FILE='data.json';
-
-async function ghReadFile(){
-  const data=await ghApi('GET','/repos/'+ghCfg.owner+'/'+ghCfg.repo+'/contents/'+GH_FILE);
-  if(!data||!data.content)return null;
-  try{return JSON.parse(atob(data.content.replace(/\n/g,'')));}catch(e){return null;}
-}
-
-async function ghWriteFile(content){
-  const payload={message:'早读巡课数据同步 '+new Date().toLocaleString('zh-CN'),content:btoa(unescape(encodeURIComponent(JSON.stringify(content))))};
-  try{
-    // 获取当前 sha
-    const data=await ghApi('GET','/repos/'+ghCfg.owner+'/'+ghCfg.repo+'/contents/'+GH_FILE);
-    if(data&&data.sha)payload.sha=data.sha;
-  }catch(e){}
-  await ghApi('PUT','/repos/'+ghCfg.owner+'/'+ghCfg.repo+'/contents/'+GH_FILE,payload);
-}
-
-async function pushToCloud(){
-  if(!ghInit())return;
-  try{
-    const subs=JSON.parse(localStorage.getItem('pss')||'[]');
-    const psStr=localStorage.getItem('perm_schedule');
-    const perm=psStr?JSON.parse(psStr):null;
-    // 先读云端已有数据，合并（防止覆盖他人刚提交的数据）
-    let cloud=null;
-    try{cloud=await ghReadFile();}catch(e){}
-    const base=cloud&&cloud.submissions?cloud:null;
-    const cloudSubs=base?base.submissions:[];
-    const merged=cloudSubs.slice();
-    // 将本地每条已提交记录合并（按 ts+date+grade+cls 去重）
-    const seen=new Set(merged.map(s=>s.ts||(s.date+s.records.length)));
-    for(const s of subs){const k=s.ts;if(!seen.has(k)){merged.push(s);seen.add(k);}}
-    await ghWriteFile({submissions:merged,perm_schedule:perm,updatedAt:new Date().toISOString()});
-    localStorage.setItem('pss',JSON.stringify(merged));
-    console.log('云端上传成功，共 '+merged.length+' 条提交');
-  }catch(e){console.error('云端上传失败:',e);}
-}
-
+// 从云端读取全部设备的文档并聚合
 async function pullFromCloud(){
-  if(!ghInit())return;
   try{
-    const data=await ghReadFile();
-    if(!data)return;
-    if(data.submissions){localStorage.setItem('pss',JSON.stringify(data.submissions));}
-    if(data.perm_schedule){Object.assign(SCHEDULE,data.perm_schedule);try{localStorage.setItem('perm_schedule',JSON.stringify(data.perm_schedule));}catch(e){}}
-    if($('pg-backend').classList.contains('on'))renderBE();
+    const db=await cdb();
+    const res=await db.collection(COLL).limit(1000).get();
+    const docs=res.data||[];
+    const allSubs=[];
+    let latestPerm=null, latestPt=0;
+    for(const d of docs){
+      if(Array.isArray(d.submissions))allSubs.push(...d.submissions);
+      if(d.perm_schedule&&d.perm_schedule.updatedAt){
+        const t=new Date(d.perm_schedule.updatedAt).getTime();
+        if(t>latestPt){latestPt=t;latestPerm=d.perm_schedule;}
+      }
+    }
+    // 合并去重（按 ts）
+    const map=new Map();
+    for(const s of allSubs){if(s&&s.ts&&!map.has(s.ts))map.set(s.ts,s);}
+    const merged=Array.from(map.values()).sort((a,b)=>(a.ts>b.ts?1:-1));
+    localStorage.setItem('pss',JSON.stringify(merged));
+    if(latestPerm){Object.assign(SCHEDULE,latestPerm.data||{});try{localStorage.setItem('perm_schedule',JSON.stringify(latestPerm.data||{}));}catch(e){}}
+    if($('pg-backend')&&$('pg-backend').classList.contains('on'))renderBE();
     renderGrid();updateProg();
-    console.log('云端下载成功');
-  }catch(e){console.error('云端下载失败:',e);}
+    console.log('云端拉取成功，共 '+merged.length+' 条提交');
+    return merged;
+  }catch(e){console.error('云端拉取失败:',e);return null;}
+}
+
+// 将本机提交上传到云端（每人一个文档，文档ID=匿名用户uid）
+async function pushToCloud(){
+  try{
+    const db=await cdb();
+    const subs=JSON.parse(localStorage.getItem('pss')||'[]');
+    // 本机归属的记录：uid 等于本机 uid 或尚未标记 uid（本地新提交归本机）
+    const mine=subs.filter(s=>!s.uid||s.uid===cAuthUid).map(s=>({...s,uid:cAuthUid}));
+    const psStr=localStorage.getItem('perm_schedule');
+    let permObj=null;
+    if(psStr){const data=JSON.parse(psStr);permObj={data:data,updatedAt:new Date().toISOString()};}
+    const payload={submissions:mine,updatedAt:new Date().toISOString()};
+    if(permObj)payload.perm_schedule=permObj;
+    await db.collection(COLL).doc(cAuthUid).set(payload);
+    // 更新本地记录的 uid 归属，避免重复上传
+    const merged=subs.map(s=>(s.uid? s : {...s,uid:cAuthUid}));
+    localStorage.setItem('pss',JSON.stringify(merged));
+    console.log('云端上传成功，本机 '+mine.length+' 条');
+    // 上传后拉取一次全局数据，保证各端一致
+    pullFromCloud();
+  }catch(e){console.error('云端上传失败:',e);}
 }
 
 function openCloud(){
   $('ov-cloud').classList.add('on');
-  const cfg=loadCloudConfig();
-  if(cfg){
-    $('cloud-owner').value=cfg.owner||'';
-    $('cloud-repo').value=cfg.repo||'';
-    $('cloud-token').value=cfg.token||'';
-  }else{
-    $('cloud-owner').value='';$('cloud-repo').value='';$('cloud-token').value='';
-  }
   updateCloudStatus();
 }
 function closeCloud(){$('ov-cloud').classList.remove('on');}
@@ -653,59 +637,31 @@ function updateCloudStatus(){
   const box=$('cloud-status-box');
   if(cloudConnected){
     box.style.background='var(--ok-bg)';box.style.color='var(--ok)';
-    box.innerHTML='✅ 已连接云端 — 所有设备共享同一份数据，提交后自动同步';
+    box.innerHTML='✅ 已连接腾讯云 — 免配置，所有老师共享数据，提交自动同步';
   }else{
     box.style.background='var(--warn-bg)';box.style.color='var(--warn)';
-    box.innerHTML='⚠️ 未连接云端 — 数据仅存储在当前浏览器';
+    box.innerHTML='⏳ 正在连接云端...（若持续未连接请检查网络）';
   }
 }
 
 function saveCloudConfig(){
-  const owner=$('cloud-owner').value.trim(),repo=$('cloud-repo').value.trim();
-  const token=$('cloud-token').value.trim();
-  if(!owner||!repo||!token){alert('请填写仓库所有者、仓库名和访问令牌');return;}
-  localStorage.setItem('gh_cfg',JSON.stringify({owner,repo,token}));
-  ghInit();
-  updateCloudStatus();
-  alert('配置已保存！正在同步云端数据...');
+  // 立即同步：先上传本机，再拉取全局
+  alert('正在同步云端数据...');
   closeCloud();
-  pullFromCloud().then(()=>{alert('云端数据已同步完成！');location.reload();})
-    .catch(()=>{alert('同步失败：请检查所有者/仓库名/令牌是否正确，令牌是否有 Contents 读写权限。');});
+  ensureCloud().then(()=>{
+    pushToCloud().then(()=>{alert('同步完成！');});
+  }).catch(()=>{alert('同步失败：请确认腾讯云服务正常、网络可用。');});
 }
 
 function disconnectCloud(){
-  if(!confirm('断开云端后数据将不再同步，是否继续？'))return;
-  localStorage.removeItem('gh_cfg');
-  ghCfg=null;cloudConnected=false;
-  updateCloudStatus();alert('已断开云端连接');
+  alert('当前为腾讯云免配置模式，无需断开。如需更换后端请联系系统维护人员。');
 }
 
-// 支持 URL 参数 ?cfg=<base64JSON> 一键自动配置（用于快速在其它设备部署配置）
-function autoConfigFromURL(){
-  try{
-    const params=new URLSearchParams(location.search);
-    const cfg=params.get('cfg');
-    if(!cfg)return false;
-    const decoded=JSON.parse(decodeURIComponent(atob(cfg)));
-    if(decoded&&decoded.owner&&decoded.repo&&decoded.token){
-      localStorage.setItem('gh_cfg',JSON.stringify({owner:decoded.owner,repo:decoded.repo,token:decoded.token}));
-      // 移除 URL 中的配置参数，避免令牌留在地址栏
-      history.replaceState(null,'',location.pathname);
-      return true;
-    }
-  }catch(e){}
-  return false;
-}
-
-// Auto connect on load
+// Auto connect on load: 页面加载后自动匿名登录并拉取云端
 try{
-  const applied=autoConfigFromURL();
-  ghInit();
-  if(cloudConnected){
-    // 延迟到页面就绪后拉取云端数据
-    setTimeout(()=>{pullFromCloud();},800);
-    if(applied)setTimeout(()=>{alert('云端配置成功！数据已从云端同步。');},2500);
-  }
+  setTimeout(()=>{
+    ensureCloud().then(()=>{pullFromCloud();}).catch(()=>{});
+  },500);
 }catch(e){}
 
 // ============================================================
