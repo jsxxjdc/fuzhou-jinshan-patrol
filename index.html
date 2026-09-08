@@ -74,8 +74,15 @@
   .gtab.on{background:#fff;color:var(--pri);box-shadow:var(--sh);border-color:var(--pri-l)}
   .gtab:not(.on):hover{background:rgba(255,255,255,.9);color:var(--g700)}
 
-  /* ===== CLASS GRID ===== */
-  .cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+  /* ===== CLASS GRID (全校一页，按年级分区) ===== */
+  .cgrid{display:block}
+  .allbar{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--g500);background:rgba(79,70,229,.06);border:1px dashed var(--pri-l);border-radius:var(--r);padding:9px 14px;margin-bottom:14px;line-height:1.6}
+  .gsec{margin-bottom:4px}
+  .gsec-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:20px 0 10px;padding-top:14px;border-top:1px dashed var(--g200)}
+  .gsec:first-child .gsec-h{border-top:none;margin-top:0;padding-top:0}
+  .gsec-t{font-size:16px;font-weight:800;color:var(--g700);padding-left:9px;border-left:4px solid var(--pri)}
+  .gsec-c{font-size:12px;font-weight:600;color:var(--g400)}
+  .cgrid-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
   .ccard{background:#fff;border:2px solid var(--g100);border-radius:var(--r);padding:16px;transition:var(--tr);position:relative;overflow:hidden}
   .ccard::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--g200);transition:var(--tr)}
   .ccard:hover{box-shadow:var(--sh-md);transform:translateY(-2px);border-color:var(--g300)}
@@ -318,7 +325,7 @@
       <div class="lbl" id="prog-lbl">0 / 0</div>
     </div>
   </div>
-  <div class="gtabs" id="gtabs"></div>
+  <div class="allbar">🏫 1~6年级全校巡课（每天1位老师）：点击教师名字逐班评价，全部班级检查完后，在下方统一填写 3 条巡课反馈并提交即可</div>
   <div class="cgrid" id="cgrid"></div>
   <div class="card submit-box">
     <h3><span class="dot"></span>巡课反馈 <span style="color:var(--err);font-weight:400;font-size:12px">（3条均为必填）</span></h3>
@@ -480,7 +487,7 @@ const PW="jsxxjdc";
 let backendUnlocked=false;
 
 // STATE
-let S={grade:'一年级',wdIdx:0,rec:{},fb:'',inspector:'',modal:null};
+let S={wdIdx:0,rec:{},fb:'',inspector:'',modal:null};
 
 // 检查人员姓名只在内存中使用，绝不写入 localStorage（刷新/换人后需重新填写，避免混淆）
 function loadS(){try{const d=JSON.parse(localStorage.getItem('ps'));if(d&&d.rec)S.rec=d.rec||{};}catch(e){}}
@@ -504,7 +511,7 @@ function init(){
   let di=now.getDay()-1;if(di<0||di>4)di=0;
   S.wdIdx=di;$('inp-wday').value=di;
   refreshInspBtn();
-  renderGTabs();renderGrid();updateProg();
+  renderGrid();updateProg();
   // 腾讯云免配置：自动连接并拉取云端（已在脚本末尾触发）
 }
 
@@ -542,31 +549,34 @@ function confirmInsp(){
 function onDateChange(){} // 日期自动固定，不允许手动选择
 function onWdayChange(){S.wdIdx=+$('inp-wday').value;renderGrid();updateProg();}
 
-// GRADE TABS
-function renderGTabs(){$('gtabs').innerHTML=GRADES.map(g=>`<button class="gtab ${g===S.grade?'on':''}" onclick="pickGrade('${g}')">${g}</button>`).join('')}
-function pickGrade(g){S.grade=g;renderGTabs();renderGrid();updateProg();}
-
-// GRID
+// GRID（全校1~6年级同页展示，每天一位老师巡全校一次提交）
 function renderGrid(){
-  const g=$('cgrid'),w=getWday(),d=getDate(),gd=SCHEDULE[w]?.[S.grade]||{};
-  const cls=Object.keys(gd).sort((a,b)=>parseInt(a)-parseInt(b));
-  g.innerHTML=cls.map(c=>{
-    const k=`${d}_${S.grade}_${c}`,r=S.rec[k];
-    const tn=r?.display||gd[c];
-    const done=!!r?.action;
-    const cls2=done?'ccard done':'ccard pending';
-    const badge=done?'<span class="tbadge done">已反馈</span>':'<span class="tbadge pending">待反馈</span>';
-    return `<div class="${cls2}">${badge}<div class="cnum">${c}</div><div class="tname" onclick="openModal('${S.grade}','${esc(c)}','${esc(gd[c])}')">${esc(tn)}</div></div>`;
+  const g=$('cgrid'),w=getWday(),d=getDate();
+  g.innerHTML=GRADES.map(gr=>{
+    const gd=SCHEDULE[w]?.[gr]||{};
+    const cls=Object.keys(gd).sort((a,b)=>parseInt(a)-parseInt(b));
+    let cDone=0;
+    const cards=cls.map(c=>{
+      const k=`${d}_${gr}_${c}`,r=S.rec[k];
+      const tn=r?.display||gd[c];
+      const dd=!!r?.action;if(dd)cDone++;
+      const cls2=dd?'ccard done':'ccard pending';
+      const badge=dd?'<span class="tbadge done">已反馈</span>':'<span class="tbadge pending">待反馈</span>';
+      return `<div class="${cls2}">${badge}<div class="cnum">${c}</div><div class="tname" onclick="openModal('${gr}','${esc(c)}','${esc(gd[c])}')">${esc(tn)}</div></div>`;
+    }).join('');
+    return `<div class="gsec"><div class="gsec-h"><span class="gsec-t">${gr}</span><span class="gsec-c">${cDone}/${cls.length} 已检查</span></div><div class="cgrid-row">${cards}</div></div>`;
   }).join('');
 }
 function esc(s){return String(s).replace(/'/g,"\\'").replace(/"/g,'&quot;')}
 
-// PROGRESS
+// PROGRESS（全校总进度）
 function updateProg(){
-  const d=getDate(),w=getWday(),gd=SCHEDULE[w]?.[S.grade]||{};
-  const total=Object.keys(gd).length;
-  let done=0;
-  for(const c of Object.keys(gd)){if(S.rec[`${d}_${S.grade}_${c}`]?.action)done++;}
+  const d=getDate(),w=getWday();
+  let total=0,done=0;
+  for(const gr of GRADES){
+    const gd=SCHEDULE[w]?.[gr]||{};
+    for(const c of Object.keys(gd)){total++;if(S.rec[`${d}_${gr}_${c}`]?.action)done++;}
+  }
   const pct=total?Math.round(done/total*100):0;
   $('prog-fill').style.width=pct+'%';
   $('prog-lbl').textContent=`${done} / ${total} 已检查`;
@@ -650,27 +660,27 @@ function doSubmit(){
   [1,2,3].forEach(i=>$('inp-fb'+i).classList.remove('er'));
   const fb=fbArr.map((t,i)=>'反馈'+(i+1)+'：'+t).join('\n');
 
-  const d=getDate(),sub={date:d,weekday:getWday(),inspector:insp,feedback:fb,ts:new Date().toISOString(),records:[],grade:S.grade};
-  // 只提交当前年段（年级）的评价，便于“同人同天同年段覆盖、不同年段各自保留”
+  const d=getDate(),sub={date:d,weekday:getWday(),inspector:insp,feedback:fb,ts:new Date().toISOString(),records:[],grade:'全校'};
+  // 全校一次提交：收集今天所有年级已评价的班级（每天1位老师巡全校）
   for(const[k,r]of Object.entries(S.rec)){
-    if(r.date===d&&r.grade===S.grade){
+    if(r.date===d){
       r.inspector=insp;
       sub.records.push(r);
     }
   }
-  if(!sub.records.length){$('submit-hint').textContent='当前年段还没有评价记录，请先点击班级进行评价';$('submit-hint').style.color='var(--err)';return;}
+  if(!sub.records.length){$('submit-hint').textContent='今天还没有评价任何班级，请先点击教师名字进行评价';$('submit-hint').style.color='var(--err)';return;}
 
   let subs=[];try{subs=JSON.parse(localStorage.getItem('pss')||'[]');}catch(e){}
-  // 同一检查人员同一天同一年段的提交 → 覆盖该年段；不同日/不同年段各自保留
+  // 同一检查人员同一天只保留最新一次提交（全校提交覆盖原记录）；不同日各自保留
   let hadOld=false;
   const preLen=subs.length;
-  subs=subs.filter(x=>!(x.date===d&&x.inspector===insp&&x.grade===S.grade));
+  subs=subs.filter(x=>!(x.date===d&&x.inspector===insp));
   hadOld=subs.length<preLen;
   subs.push(sub);localStorage.setItem('pss',JSON.stringify(subs));
   // 同步到云端
   pushToCloud();
   // 提交后清除单次修改的名字，恢复总表原名（评价与三条反馈保留，便于继续修改）
-  for(const[k,r]of Object.entries(S.rec)){if(r.date===d&&r.grade===S.grade){delete r.display;}}
+  for(const[k,r]of Object.entries(S.rec)){if(r.date===d){delete r.display;}}
   // 登记本机已提交班级（用于云端删除后恢复待反馈）
   const f2=getFlags();
   const newKeys=sub.records.map(r=>`${d}_${r.grade}_${r.cls}`);
@@ -678,7 +688,7 @@ function doSubmit(){
   saveFlags(f2);
   saveS();renderGrid();updateProg();
   $('submit-hint').textContent='';$('submit-hint').style.color='var(--ok)';
-  showToast(hadOld?`✅ ${S.grade}已更新提交（覆盖原记录）！`:`✅ ${S.grade}提交成功！数据已同步云端`);
+  showToast(hadOld?`✅ 全校巡课已更新提交（覆盖原记录，共${sub.records.length}班）！`:`✅ 全校巡课提交成功（共${sub.records.length}班）！数据已同步云端`);
   // 提交后清空检查人员（不保存），下一位老师必须重新填写，避免混淆
   S.inspector='';refreshInspBtn();
 }
@@ -825,9 +835,9 @@ async function pullFromCloud(){
     let merged=Array.from(map.values()).sort((a,b)=>(a.ts>b.ts?1:-1));
     // 过滤已删除 / 清空标记之前的记录
     merged=merged.filter(s=>!deletedSet.has(s.ts)&&!(clearedAt&&s.ts&&s.ts<clearedAt));
-    // 同一检查人同一天同一年段只保留最新一条（不同年段各自保留）
+    // 同一检查人同一天只保留最新一次提交（全校提交覆盖；不同人/不同日各自保留）
     const byKey=new Map();
-    for(const s of merged){const key=(s.date||'')+'|'+(s.inspector||'')+'|'+(s.grade||'');const old=byKey.get(key);if(!old||(s.ts||'')>(old.ts||''))byKey.set(key,s);}
+    for(const s of merged){const key=(s.date||'')+'|'+(s.inspector||'');const old=byKey.get(key);if(!old||(s.ts||'')>(old.ts||''))byKey.set(key,s);}
     merged=Array.from(byKey.values()).sort((a,b)=>(a.ts>b.ts?1:-1));
     // 规范化：历史记录中检查人漏填(空/未填写)时按该次提交的检查人回填
     for(const s of merged){
@@ -1070,7 +1080,7 @@ function rOverview(subs,all){
   else{
     h+=`<table class="dt"><thead><tr><th>提交时间</th><th>日期</th><th>星期</th><th>年级</th><th>检查人员</th><th>检查班数</th><th>反馈</th></tr></thead><tbody>`;
     const recent=subs.slice().sort((a,b)=>(a.ts>b.ts?-1:1)).slice(0,10);
-    for(const s of recent)h+=`<tr><td><strong>${fmtTime(s.ts)}</strong></td><td>${s.date}</td><td>${s.weekday}</td><td>${s.grade||''}</td><td>${s.inspector}</td><td>${s.records.length}</td><td style="max-width:300px;word-break:break-all">${s.feedback}</td></tr>`;
+    for(const s of recent)h+=`<tr><td><strong>${fmtTime(s.ts)}</strong></td><td>${s.date}</td><td>${s.weekday}</td><td>${s.grade==='全校'?'1~6年级':(s.grade||'-')}</td><td>${s.inspector}</td><td>${s.records.length}</td><td style="max-width:300px;word-break:break-all">${s.feedback}</td></tr>`;
     h+=`</tbody></table>`;
   }
   h+=`</div>`;
